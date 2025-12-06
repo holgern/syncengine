@@ -8,9 +8,10 @@ any class that implements the required methods will be compatible without
 needing to explicitly inherit from these protocols.
 """
 
+from collections.abc import Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Callable, Iterator, Optional, Protocol, runtime_checkable
+from typing import Any, Callable, Optional, Protocol, runtime_checkable
 
 
 @runtime_checkable
@@ -85,7 +86,8 @@ class CloudClientProtocol(Protocol):
             storage_id: Storage/workspace identifier (0 for default/personal)
             chunk_size: Chunk size for multipart uploads (bytes)
             use_multipart_threshold: File size threshold for multipart upload
-            progress_callback: Callback for upload progress (bytes_uploaded, total_bytes)
+            progress_callback: Callback for upload progress (bytes_uploaded,
+            total_bytes)
 
         Returns:
             Upload result (implementation-specific)

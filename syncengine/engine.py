@@ -21,8 +21,8 @@ from .constants import (
     FUTURE_RESULT_TIMEOUT,
     format_size,
 )
-from .modes import SyncMode
 from .models import FileEntry
+from .modes import SyncMode
 from .operations import SyncOperations
 from .pair import SyncPair
 from .progress import SyncProgressTracker
@@ -89,7 +89,8 @@ class SyncEngine:
 
         Args:
             client: Cloud API client implementing CloudClientProtocol
-            entries_manager_factory: Factory function that creates a FileEntriesManagerProtocol
+            entries_manager_factory: Factory function that creates a
+                FileEntriesManagerProtocol
                 instance. Signature: (client, storage_id) -> FileEntriesManagerProtocol
             output: Output handler for displaying progress/status.
                 If None, DefaultOutputHandler is used.
