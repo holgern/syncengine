@@ -48,7 +48,7 @@ class TestLoadSyncPairsFromJson:
             {
                 "local": str(local_dir),
                 "remote": "/remote/path",
-                "syncMode": "localToCloud",
+                "syncMode": "sourceToDestination",
                 "storage": 5,
                 "disableLocalTrash": True,
                 "ignore": ["*.tmp", "*.log"],
@@ -83,7 +83,7 @@ class TestLoadSyncPairsFromJson:
             {
                 "local": str(local_dir2),
                 "remote": "/remote/path2",
-                "syncMode": "cloudToLocal",
+                "syncMode": "destinationToSource",
             },
         ]
 
@@ -329,10 +329,10 @@ class TestLoadSyncPairsFromJson:
 
         valid_modes = [
             "twoWay",
-            "localToCloud",
-            "localBackup",
-            "cloudToLocal",
-            "cloudBackup",
+            "sourceToDestination",
+            "sourceBackup",
+            "destinationToSource",
+            "destinationBackup",
         ]
 
         for mode in valid_modes:

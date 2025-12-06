@@ -30,7 +30,10 @@ DEFAULT_BATCH_SIZE = 50  # Number of files per batch in streaming mode
 # Default names for sync-related files and directories
 # These can be overridden via SyncConfig
 DEFAULT_IGNORE_FILE_NAME = ".syncignore"
-DEFAULT_LOCAL_TRASH_DIR_NAME = ".syncengine.trash.local"
+DEFAULT_LOCAL_TRASH_DIR_NAME = (
+    ".syncengine.trash.source"  # Deprecated, use DEFAULT_SOURCE_TRASH_DIR_NAME
+)
+DEFAULT_SOURCE_TRASH_DIR_NAME = ".syncengine.trash.source"
 DEFAULT_STATE_DIR_NAME = "syncengine"  # Under ~/.config/
 
 

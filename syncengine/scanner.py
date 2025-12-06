@@ -15,8 +15,8 @@ logger = logging.getLogger(__name__)
 
 
 @dataclass
-class LocalFile:
-    """Represents a local file with metadata."""
+class SourceFile:
+    """Represents a source file with metadata."""
 
     path: Path
     """Absolute path to the file"""
@@ -41,15 +41,15 @@ class LocalFile:
     """Creation time (Unix timestamp) if available"""
 
     @classmethod
-    def from_path(cls, file_path: Path, base_path: Path) -> "LocalFile":
-        """Create LocalFile from a path.
+    def from_path(cls, file_path: Path, base_path: Path) -> "SourceFile":
+        """Create SourceFile from a path.
 
         Args:
             file_path: Absolute path to the file
             base_path: Base path for calculating relative paths
 
         Returns:
-            LocalFile instance
+            SourceFile instance
         """
         stat = file_path.stat()
         # Use as_posix() to ensure forward slashes on all platforms
@@ -74,8 +74,8 @@ class LocalFile:
     @classmethod
     def from_dir_entry(
         cls, entry: os.DirEntry, base_path: Path, stat_result: os.stat_result
-    ) -> "LocalFile":
-        """Create LocalFile from an os.DirEntry with pre-fetched stat.
+    ) -> "SourceFile":
+        """Create SourceFile from an os.DirEntry with pre-fetched stat.
 
         This is more efficient than from_path() because os.scandir() provides
         cached stat information on most platforms, avoiding extra syscalls.
@@ -86,7 +86,7 @@ class LocalFile:
             stat_result: Pre-fetched stat result (cached or explicit)
 
         Returns:
-            LocalFile instance
+            SourceFile instance
         """
         file_path = Path(entry.path)
         # Use as_posix() to ensure forward slashes on all platforms
@@ -113,8 +113,8 @@ class LocalFile:
         entry: os.DirEntry,
         base_path_str: str,
         base_path_len: int,
-    ) -> "LocalFile":
-        """Create LocalFile from os.DirEntry with minimal overhead.
+    ) -> "SourceFile":
+        """Create SourceFile from os.DirEntry with minimal overhead.
 
         This is the fastest path - uses string operations instead of Path objects
         where possible, and uses cached stat from scandir.
@@ -125,7 +125,7 @@ class LocalFile:
             base_path_len: Length of base_path_str for slicing
 
         Returns:
-            LocalFile instance
+            SourceFile instance
         """
         # Get stat - cached on most platforms from scandir
         stat_result = entry.stat(follow_symlinks=False)
@@ -158,8 +158,8 @@ class LocalFile:
         abs_path_str: str,
         relative_path: str,
         stat_result: os.stat_result,
-    ) -> "LocalFile":
-        """Create LocalFile from pre-computed path strings and stat.
+    ) -> "SourceFile":
+        """Create SourceFile from pre-computed path strings and stat.
 
         This is the fastest path for os.walk() based scanning - all path
         computations are done externally with string operations.
@@ -170,7 +170,7 @@ class LocalFile:
             stat_result: Pre-fetched stat result
 
         Returns:
-            LocalFile instance
+            SourceFile instance
         """
         # Get creation time if available (platform-dependent)
         creation_time: Optional[float] = None
@@ -189,18 +189,18 @@ class LocalFile:
 
 
 @dataclass
-class RemoteFile:
-    """Represents a remote file with metadata.
+class DestinationFile:
+    """Represents a destination file with metadata.
 
     This class wraps a FileEntryProtocol to provide a consistent interface
-    for remote files regardless of the underlying cloud service.
+    for destination files regardless of the underlying storage service.
     """
 
     entry: FileEntryProtocol
-    """Remote file entry from cloud API"""
+    """Destination file entry from storage API"""
 
     relative_path: str
-    """Relative path in the remote filesystem"""
+    """Relative path in the destination filesystem"""
 
     @property
     def size(self) -> int:
@@ -227,12 +227,12 @@ class RemoteFile:
 
     @property
     def id(self) -> int:
-        """Remote file entry ID."""
+        """Destination file entry ID."""
         return self.entry.id
 
     @property
     def hash(self) -> str:
-        """Remote file entry hash (MD5)."""
+        """Destination file entry hash (MD5)."""
         return self.entry.hash
 
 
@@ -245,12 +245,12 @@ class DirectoryScanner:
 
     Examples:
         >>> scanner = DirectoryScanner()
-        >>> files = scanner.scan_local(Path("/sync/folder"))
+        >>> files = scanner.scan_source(Path("/sync/folder"))
         >>> # Files matching patterns in ignore file are excluded
 
         >>> # With CLI patterns
         >>> scanner = DirectoryScanner(ignore_patterns=["*.tmp", "cache/*"])
-        >>> files = scanner.scan_local(Path("/sync/folder"))
+        >>> files = scanner.scan_source(Path("/sync/folder"))
     """
 
     def __init__(
@@ -383,10 +383,10 @@ class DirectoryScanner:
 
         return False
 
-    def scan_local(
+    def scan_source(
         self, directory: Path, base_path: Optional[Path] = None
-    ) -> list[LocalFile]:
-        """Recursively scan a local directory.
+    ) -> list[SourceFile]:
+        """Recursively scan a source directory.
 
         This method scans a directory tree using os.walk() for efficient
         traversal. It loads ignore files from each directory and
@@ -400,11 +400,11 @@ class DirectoryScanner:
             base_path: Base path for calculating relative paths (defaults to directory)
 
         Returns:
-            List of LocalFile objects
+            List of SourceFile objects
 
         Examples:
             >>> scanner = DirectoryScanner()
-            >>> files = scanner.scan_local(Path("/home/user/documents"))
+            >>> files = scanner.scan_source(Path("/home/user/documents"))
             >>> for f in files:
             ...     print(f.relative_path)
         """
@@ -424,10 +424,10 @@ class DirectoryScanner:
                     self._ignore_manager.load_cli_patterns(self.ignore_patterns)
 
         # Use fast path with os.walk() and string operations
-        return self._scan_local_fast(directory, base_path)
+        return self._scan_source_fast(directory, base_path)
 
-    def _scan_local_fast(self, directory: Path, base_path: Path) -> list[LocalFile]:
-        """Fast local directory scan using os.walk() and string operations.
+    def _scan_source_fast(self, directory: Path, base_path: Path) -> list[SourceFile]:
+        """Fast source directory scan using os.walk() and string operations.
 
         This method minimizes object creation and uses string operations
         instead of Path objects where possible for maximum performance.
@@ -437,9 +437,9 @@ class DirectoryScanner:
             base_path: Base path for calculating relative paths
 
         Returns:
-            List of LocalFile objects
+            List of SourceFile objects
         """
-        files: list[LocalFile] = []
+        files: list[SourceFile] = []
 
         # Convert to string once and prepare for path calculations
         base_path_str = str(base_path)
@@ -512,10 +512,10 @@ class DirectoryScanner:
                         if not S_ISREG(stat_result.st_mode):
                             continue
 
-                        local_file = LocalFile.from_stat_fast(
+                        source_file = SourceFile.from_stat_fast(
                             abs_path, file_rel_path, stat_result
                         )
-                        files.append(local_file)
+                        files.append(source_file)
                     except (OSError, PermissionError):
                         # Skip files we can't stat
                         continue
@@ -526,9 +526,9 @@ class DirectoryScanner:
 
         return files
 
-    def _scan_local_recursive(
+    def _scan_source_recursive(
         self, directory: Path, base_path: Path
-    ) -> list[LocalFile]:
+    ) -> list[SourceFile]:
         """Original recursive scan using os.scandir().
 
         Kept for compatibility and cases where os.walk() behavior differs.
@@ -538,9 +538,9 @@ class DirectoryScanner:
             base_path: Base path for calculating relative paths
 
         Returns:
-            List of LocalFile objects
+            List of SourceFile objects
         """
-        files: list[LocalFile] = []
+        files: list[SourceFile] = []
 
         try:
             # Load ignore file from this directory if it exists
@@ -567,17 +567,17 @@ class DirectoryScanner:
                             try:
                                 # Get stat result - cached on most platforms
                                 stat_result = entry.stat(follow_symlinks=False)
-                                local_file = LocalFile.from_dir_entry(
+                                source_file = SourceFile.from_dir_entry(
                                     entry, base_path, stat_result
                                 )
-                                files.append(local_file)
+                                files.append(source_file)
                             except (OSError, PermissionError):
                                 # Skip files we can't read
                                 continue
                         elif is_dir:
                             # Recursively scan subdirectories
                             files.extend(
-                                self._scan_local_recursive(item_path, base_path)
+                                self._scan_source_recursive(item_path, base_path)
                             )
                     except (OSError, PermissionError):
                         # Skip entries we can't access
@@ -588,29 +588,29 @@ class DirectoryScanner:
 
         return files
 
-    def scan_local_single_level(
+    def scan_source_single_level(
         self,
         directory: Path,
         base_path: Optional[Path] = None,
-    ) -> tuple[list[LocalFile], list[str]]:
-        """Scan a single level of a local directory (non-recursive).
+    ) -> tuple[list[SourceFile], list[str]]:
+        """Scan a single level of a source directory (non-recursive).
 
         This method is optimized for incremental sync - it returns both files
         and subdirectory names without descending into subdirectories.
         This allows the caller to decide which subdirectories to traverse
-        based on comparison with remote state.
+        based on comparison with destination state.
 
         Args:
             directory: Directory to scan
             base_path: Base path for calculating relative paths (defaults to directory)
 
         Returns:
-            Tuple of (list of LocalFile objects, list of subdirectory relative paths)
+            Tuple of (list of SourceFile objects, list of subdirectory relative paths)
 
         Examples:
             >>> scanner = DirectoryScanner()
-            >>> files, subdirs = scanner.scan_local_single_level(Path("/sync"))
-            >>> # files contains LocalFile objects for files in /sync
+            >>> files, subdirs = scanner.scan_source_single_level(Path("/sync"))
+            >>> # files contains SourceFile objects for files in /sync
             >>> # subdirs contains relative paths like "subdir1", "subdir2"
         """
         # Initialize ignore manager only on first call (when scanning root directory)
@@ -633,7 +633,7 @@ class DirectoryScanner:
                 )
                 self._ignore_manager.load_cli_patterns(self.ignore_patterns)
 
-        files: list[LocalFile] = []
+        files: list[SourceFile] = []
         subdirs: list[str] = []
 
         # Convert to strings for fast path operations
@@ -686,10 +686,10 @@ class DirectoryScanner:
                             try:
                                 stat_result = entry.stat(follow_symlinks=False)
                                 if S_ISREG(stat_result.st_mode):
-                                    local_file = LocalFile.from_stat_fast(
+                                    source_file = SourceFile.from_stat_fast(
                                         entry.path, rel_path, stat_result
                                     )
-                                    files.append(local_file)
+                                    files.append(source_file)
                             except (OSError, PermissionError):
                                 continue
                         elif is_dir:
@@ -704,23 +704,23 @@ class DirectoryScanner:
 
         return files, subdirs
 
-    def scan_remote(
+    def scan_destination(
         self, entries_with_paths: list[tuple[FileEntryProtocol, str]]
-    ) -> list[RemoteFile]:
-        """Process remote file entries into RemoteFile objects.
+    ) -> list[DestinationFile]:
+        """Process destination file entries into DestinationFile objects.
 
         Args:
             entries_with_paths: List of (FileEntry, relative_path) tuples from API
 
         Returns:
-            List of RemoteFile objects
+            List of DestinationFile objects
         """
-        remote_files: list[RemoteFile] = []
+        destination_files: list[DestinationFile] = []
 
         for entry, rel_path in entries_with_paths:
             # Only include files, not folders
             if entry.type != "folder":
-                remote_file = RemoteFile(entry=entry, relative_path=rel_path)
-                remote_files.append(remote_file)
+                destination_file = DestinationFile(entry=entry, relative_path=rel_path)
+                destination_files.append(destination_file)
 
-        return remote_files
+        return destination_files

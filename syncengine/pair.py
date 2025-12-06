@@ -1,4 +1,4 @@
-"""Sync pair definition for synchronizing local and remote paths."""
+"""Sync pair definition for synchronizing source and destination paths."""
 
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -9,26 +9,27 @@ from .modes import SyncMode
 
 @dataclass
 class SyncPair:
-    """Defines a synchronization pair between local and remote paths.
+    """Defines a synchronization pair between source and destination paths.
 
-    A sync pair specifies how files should be synchronized between a local directory
-    and a remote path in cloud storage, including the sync mode and various options.
+    A sync pair specifies how files should be synchronized between a source directory
+    and a destination path, including the sync mode and various options.
+    Supports local-to-local, local-to-cloud, cloud-to-local, and cloud-to-cloud sync.
 
     Examples:
         >>> pair = SyncPair(
-        ...     local=Path("/home/user/Documents"),
-        ...     remote="/Documents",
+        ...     source=Path("/home/user/Documents"),
+        ...     destination="/Documents",
         ...     sync_mode=SyncMode.TWO_WAY
         ... )
         >>> pair.alias = "documents"
         >>> pair.ignore = ["*.tmp", "*.log"]
     """
 
-    local: Path
-    """Local directory path to sync"""
+    source: Path
+    """Source directory path to sync"""
 
-    remote: str
-    """Remote path in cloud storage (e.g., "/Documents" or "Documents")"""
+    destination: str
+    """Destination path (e.g., "/Documents" or "Documents")"""
 
     sync_mode: SyncMode
     """Synchronization mode (how files are synced)"""
@@ -36,8 +37,9 @@ class SyncPair:
     alias: Optional[str] = None
     """Optional alias for easy reference in CLI"""
 
-    disable_local_trash: bool = False
-    """If True, deleted local files are permanently deleted instead of moved to trash"""
+    disable_source_trash: bool = False
+    """If True, deleted source files are permanently deleted
+    instead of moved to trash"""
 
     ignore: list[str] = field(default_factory=list)
     """List of glob patterns to ignore (e.g., ["*.log", "temp/*"])"""
@@ -49,30 +51,30 @@ class SyncPair:
     """Storage/workspace ID (0 for personal/default storage)"""
 
     @property
-    def use_local_trash(self) -> bool:
-        """Whether to use local trash for deleted files."""
-        return not self.disable_local_trash
+    def use_source_trash(self) -> bool:
+        """Whether to use source trash for deleted files."""
+        return not self.disable_source_trash
 
     def __post_init__(self) -> None:
         """Validate and normalize sync pair configuration."""
-        # Ensure local is a Path object (runtime coercion when passed as str)
+        # Ensure source is a Path object (runtime coercion when passed as str)
         # Cast to Any to allow runtime type check without mypy complaining
-        local_value: Any = self.local
-        if not isinstance(local_value, Path):
-            object.__setattr__(self, "local", Path(local_value))
+        source_value: Any = self.source
+        if not isinstance(source_value, Path):
+            object.__setattr__(self, "source", Path(source_value))
 
         # Ensure sync_mode is SyncMode enum
         if isinstance(self.sync_mode, str):
             self.sync_mode = SyncMode.from_string(self.sync_mode)
 
-        # Normalize remote path (remove leading/trailing slashes for consistency)
-        # When remote is "/" or empty, files sync directly to cloud root.
-        # E.g., local/subdir/file.txt -> /subdir/file.txt (not /local/subdir/file.txt)
-        if self.remote == "/":
-            # Root directory - normalize to empty string (meaning cloud root)
-            self.remote = ""
+        # Normalize destination path (remove leading/trailing slashes for consistency)
+        # When destination is "/" or empty, files sync directly to destination root.
+        # E.g., source/subdir/file.txt -> /subdir/file.txt (not /source/subdir/file.txt)
+        if self.destination == "/":
+            # Root directory - normalize to empty string (meaning destination root)
+            self.destination = ""
         else:
-            self.remote = self.remote.strip("/")
+            self.destination = self.destination.strip("/")
 
     @classmethod
     def from_dict(cls, data: dict) -> "SyncPair":
@@ -89,24 +91,24 @@ class SyncPair:
 
         Examples:
             >>> data = {
-            ...     "local": "/home/user/Documents",
-            ...     "remote": "/Documents",
+            ...     "source": "/home/user/Documents",
+            ...     "destination": "/Documents",
             ...     "syncMode": "twoWay",
             ...     "alias": "documents"
             ... }
             >>> pair = SyncPair.from_dict(data)
         """
-        required_fields = ["local", "remote", "syncMode"]
+        required_fields = ["source", "destination", "syncMode"]
         missing = [f for f in required_fields if f not in data]
         if missing:
             raise ValueError(f"Missing required fields: {', '.join(missing)}")
 
         return cls(
-            local=Path(data["local"]),
-            remote=data["remote"],
+            source=Path(data["source"]),
+            destination=data["destination"],
             sync_mode=SyncMode.from_string(data["syncMode"]),
             alias=data.get("alias"),
-            disable_local_trash=data.get("disableLocalTrash", False),
+            disable_source_trash=data.get("disableSourceTrash", False),
             ignore=data.get("ignore", []),
             exclude_dot_files=data.get("excludeDotFiles", False),
             storage_id=data.get("storageId", 0),
@@ -120,11 +122,11 @@ class SyncPair:
             Uses POSIX-style paths (forward slashes) for cross-platform consistency.
         """
         return {
-            "local": self.local.as_posix(),
-            "remote": self.remote,
+            "source": self.source.as_posix(),
+            "destination": self.destination,
             "syncMode": self.sync_mode.value,
             "alias": self.alias,
-            "disableLocalTrash": self.disable_local_trash,
+            "disableSourceTrash": self.disable_source_trash,
             "ignore": self.ignore,
             "excludeDotFiles": self.exclude_dot_files,
             "storageId": self.storage_id,
@@ -137,14 +139,14 @@ class SyncPair:
         """Parse a literal sync pair string.
 
         Supports various formats:
-        - /local:/remote                     # Two-way (default)
-        - /local:twoWay:/remote              # Explicit mode
-        - /local:tw:/remote                  # Abbreviated mode
-        - /local:localToCloud:/remote        # Full mode name
+        - /source:/destination                     # Two-way (default)
+        - /source:twoWay:/destination              # Explicit mode
+        - /source:tw:/destination                  # Abbreviated mode
+        - /source:sourceToDestination:/destination # Full mode name
 
         On Windows, also supports:
-        - C:/local:mode:/remote              # Windows path with mode
-        - C:/local:/remote                   # Windows path without mode
+        - C:/source:mode:/destination              # Windows path with mode
+        - C:/source:/destination                   # Windows path without mode
 
         Args:
             literal: Literal sync pair string
@@ -160,9 +162,9 @@ class SyncPair:
             >>> pair = SyncPair.parse_literal("/home/user/docs:/Documents")
             >>> pair.sync_mode
             SyncMode.TWO_WAY
-            >>> pair = SyncPair.parse_literal("/home/user/docs:ltc:/Documents")
+            >>> pair = SyncPair.parse_literal("/home/user/docs:std:/Documents")
             >>> pair.sync_mode
-            SyncMode.LOCAL_TO_CLOUD
+            SyncMode.SOURCE_TO_DESTINATION
         """
         import re
 
@@ -183,29 +185,29 @@ class SyncPair:
             parts = literal.split(":")
 
         if len(parts) == 2:
-            # Format: /local:/remote (default mode)
-            local, remote = parts
+            # Format: /source:/destination (default mode)
+            source, destination = parts
             sync_mode = default_mode
         elif len(parts) == 3:
-            # Format: /local:mode:/remote
-            local, mode_str, remote = parts
+            # Format: /source:mode:/destination
+            source, mode_str, destination = parts
             sync_mode = SyncMode.from_string(mode_str)
         else:
             raise ValueError(
                 f"Invalid sync pair literal: {literal}. "
-                "Expected format: '/local:/remote' or '/local:mode:/remote'"
+                "Expected format: '/source:/destination' or '/source:mode:/destination'"
             )
 
         # Validate paths are not empty
-        if not local or not remote:
+        if not source or not destination:
             raise ValueError(
                 f"Invalid sync pair literal: {literal}. "
-                "Local and remote paths cannot be empty"
+                "Source and destination paths cannot be empty"
             )
 
         return cls(
-            local=Path(local),
-            remote=remote,
+            source=Path(source),
+            destination=destination,
             sync_mode=sync_mode,
         )
 
@@ -214,14 +216,18 @@ class SyncPair:
 
         Uses POSIX-style paths for cross-platform consistency.
         """
-        local_str = self.local.as_posix()
+        source_str = self.source.as_posix()
         if self.alias:
-            return f"{self.alias} ({local_str} ←{self.sync_mode.value}→ {self.remote})"
-        return f"{local_str} ←{self.sync_mode.value}→ {self.remote}"
+            return (
+                f"{self.alias} ({source_str} "
+                f"←{self.sync_mode.value}→ {self.destination})"
+            )
+        return f"{source_str} ←{self.sync_mode.value}→ {self.destination}"
 
     def __repr__(self) -> str:
         """Detailed representation of sync pair."""
         return (
-            f"SyncPair(local={self.local.as_posix()}, remote={self.remote}, "
+            f"SyncPair(source={self.source.as_posix()}, "
+            f"destination={self.destination}, "
             f"sync_mode={self.sync_mode}, alias={self.alias})"
         )

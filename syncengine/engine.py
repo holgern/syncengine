@@ -1,8 +1,8 @@
 """Core sync engine for executing sync operations.
 
 This module provides the SyncEngine class which orchestrates file synchronization
-between local filesystem and cloud storage using protocol-based abstractions
-for cloud-agnostic operation.
+between source filesystem and destination storage using protocol-based abstractions
+for storage-agnostic operation.
 """
 
 import logging
@@ -27,7 +27,6 @@ from .operations import SyncOperations
 from .pair import SyncPair
 from .progress import SyncProgressTracker
 from .protocols import (
-    CloudClientProtocol,
     DefaultOutputHandler,
     FileEntriesManagerProtocol,
     NullProgressBarFactory,
@@ -35,12 +34,13 @@ from .protocols import (
     OutputHandlerProtocol,
     ProgressBarFactoryProtocol,
     SpinnerFactoryProtocol,
+    StorageClientProtocol,
 )
-from .scanner import DirectoryScanner, LocalFile, RemoteFile
+from .scanner import DestinationFile, DirectoryScanner, SourceFile
 from .state import (
     SyncStateManager,
-    build_local_tree_from_files,
-    build_remote_tree_from_files,
+    build_destination_tree_from_files,
+    build_source_tree_from_files,
 )
 
 logger = logging.getLogger(__name__)
@@ -50,18 +50,18 @@ class SyncEngine:
     """Core sync engine that orchestrates file synchronization.
 
     The engine supports:
-    - Multiple sync modes (TWO_WAY, LOCAL_BACKUP, CLOUD_BACKUP, etc.)
+    - Multiple sync modes (TWO_WAY, SOURCE_BACKUP, DESTINATION_BACKUP, etc.)
     - Parallel uploads/downloads with semaphore-based concurrency control
     - Pause/resume/cancel operations
     - Rename/move detection
     - Ignore patterns
     - State tracking for incremental sync
 
-    This is a cloud-agnostic engine that works with any cloud storage provider
-    through the CloudClientProtocol and FileEntriesManagerProtocol interfaces.
+    This is a cloud-agnostic engine that works with any storage provider
+    through the StorageClientProtocol and FileEntriesManagerProtocol interfaces.
 
     Attributes:
-        client: Cloud API client implementing CloudClientProtocol
+        client: Storage API client implementing StorageClientProtocol
         output: Output handler for displaying progress/status
         operations: Sync operations handler
         state_manager: State manager for tracking sync history
@@ -74,9 +74,9 @@ class SyncEngine:
 
     def __init__(
         self,
-        client: CloudClientProtocol,
+        client: StorageClientProtocol,
         entries_manager_factory: Callable[
-            [CloudClientProtocol, int], FileEntriesManagerProtocol
+            [StorageClientProtocol, int], FileEntriesManagerProtocol
         ],
         output: Optional[OutputHandlerProtocol] = None,
         state_manager: Optional[SyncStateManager] = None,
@@ -88,7 +88,7 @@ class SyncEngine:
         """Initialize sync engine.
 
         Args:
-            client: Cloud API client implementing CloudClientProtocol
+            client: Storage API client implementing StorageClientProtocol
             entries_manager_factory: Factory function that creates a
                 FileEntriesManagerProtocol
                 instance. Signature: (client, storage_id) -> FileEntriesManagerProtocol
@@ -201,13 +201,13 @@ class SyncEngine:
             >>> print(f"Would upload {stats['uploads']} files")
         """
         # Validate local directory exists
-        if not pair.local.exists():
-            raise ValueError(f"Local directory does not exist: {pair.local}")
-        if not pair.local.is_dir():
-            raise ValueError(f"Local path is not a directory: {pair.local}")
+        if not pair.source.exists():
+            raise ValueError(f"Local directory does not exist: {pair.source}")
+        if not pair.source.is_dir():
+            raise ValueError(f"Local path is not a directory: {pair.source}")
 
         if not self.output.quiet:
-            self.output.info(f"Syncing: {pair.local} <-> {pair.remote}")
+            self.output.info(f"Syncing: {pair.source} <-> {pair.destination}")
             self.output.info(f"Mode: {pair.sync_mode.value}")
             if dry_run:
                 self.output.info("Dry run: No changes will be made")
@@ -218,9 +218,9 @@ class SyncEngine:
             self.output.print("")
 
         # Choose between streaming and traditional mode
-        # For LOCAL_TO_CLOUD and LOCAL_BACKUP, use incremental mode (even for dry-run)
-        # to avoid scanning huge directories upfront
-        if pair.sync_mode in (SyncMode.LOCAL_TO_CLOUD, SyncMode.LOCAL_BACKUP):
+        # For SOURCE_TO_DESTINATION and SOURCE_BACKUP, use incremental mode
+        # (even for dry-run) to avoid scanning huge directories upfront
+        if pair.sync_mode in (SyncMode.SOURCE_TO_DESTINATION, SyncMode.SOURCE_BACKUP):
             # Use incremental mode for local-to-cloud (works for both dry-run and real)
             return self._sync_pair_incremental(
                 pair,
@@ -233,7 +233,7 @@ class SyncEngine:
                 start_delay,
                 sync_progress_tracker,
             )
-        elif use_streaming and not dry_run and pair.sync_mode.requires_remote_scan:
+        elif use_streaming and not dry_run and pair.sync_mode.requires_destination_scan:
             # Use streaming mode for other modes (not dry-run)
             return self._sync_pair_streaming(
                 pair,
@@ -289,16 +289,16 @@ class SyncEngine:
         previous_local_tree = None
         previous_remote_tree = None
         if pair.sync_mode == SyncMode.TWO_WAY:
-            state = self.state_manager.load_state(pair.local, pair.remote)
+            state = self.state_manager.load_state(pair.source, pair.destination)
             if state:
                 previous_synced_files = state.synced_files
-                previous_local_tree = state.local_tree
-                previous_remote_tree = state.remote_tree
+                previous_local_tree = state.source_tree
+                previous_remote_tree = state.destination_tree
                 logger.debug(
                     f"Loaded previous sync state with "
                     f"{len(previous_synced_files)} files, "
-                    f"local_tree: {state.local_tree.size}, "
-                    f"remote_tree: {state.remote_tree.size}"
+                    f"local_tree: {state.source_tree.size}, "
+                    f"remote_tree: {state.destination_tree.size}"
                 )
 
         # Step 1: Scan files
@@ -308,28 +308,28 @@ class SyncEngine:
             local_files = []
             remote_files = []
 
-            if pair.sync_mode.requires_local_scan:
+            if pair.sync_mode.requires_source_scan:
                 scanner = DirectoryScanner(
                     ignore_patterns=pair.ignore,
                     exclude_dot_files=pair.exclude_dot_files,
                 )
-                local_files = scanner.scan_local(pair.local)
+                local_files = scanner.scan_source(pair.source)
                 logger.debug(f"Found {len(local_files)} local file(s)")
 
-            if pair.sync_mode.requires_remote_scan:
+            if pair.sync_mode.requires_destination_scan:
                 remote_files = self._scan_remote(pair)
                 logger.debug(f"Found {len(remote_files)} remote file(s)")
         else:
             # Use progress indicator for scanning
             with self.progress_bar_factory.create_progress_bar() as progress:
                 # Scan local files
-                if pair.sync_mode.requires_local_scan:
+                if pair.sync_mode.requires_source_scan:
                     task = progress.add_task("Scanning local directory...", total=None)
                     scanner = DirectoryScanner(
                         ignore_patterns=pair.ignore,
                         exclude_dot_files=pair.exclude_dot_files,
                     )
-                    local_files = scanner.scan_local(pair.local)
+                    local_files = scanner.scan_source(pair.source)
                     progress.update(
                         task, description=f"Found {len(local_files)} local file(s)"
                     )
@@ -337,7 +337,7 @@ class SyncEngine:
                     local_files = []
 
                 # Scan remote files
-                if pair.sync_mode.requires_remote_scan:
+                if pair.sync_mode.requires_destination_scan:
                     task = progress.add_task("Scanning remote directory...", total=None)
                     remote_files = self._scan_remote(pair)
                     progress.update(
@@ -398,7 +398,7 @@ class SyncEngine:
                     elif decision.action == SyncAction.DOWNLOAD:
                         # Files downloaded to local (now exist in both)
                         current_synced_files.add(decision.relative_path)
-                    # DELETE_LOCAL/DELETE_REMOTE are NOT added (no longer exist)
+                    # DELETE_SOURCE/DELETE_DESTINATION are NOT added (no longer exist)
 
                 # Build full tree state for v2 format
                 # Filter to only include files that are now synced
@@ -409,15 +409,15 @@ class SyncEngine:
                     f for f in remote_files if f.relative_path in current_synced_files
                 ]
 
-                local_tree = build_local_tree_from_files(synced_local_files)
-                remote_tree = build_remote_tree_from_files(synced_remote_files)
+                local_tree = build_source_tree_from_files(synced_local_files)
+                remote_tree = build_destination_tree_from_files(synced_remote_files)
 
                 self.state_manager.save_state(
-                    pair.local,
-                    pair.remote,
+                    pair.source,
+                    pair.destination,
                     synced_files=current_synced_files,
-                    local_tree=local_tree,
-                    remote_tree=remote_tree,
+                    source_tree=local_tree,
+                    destination_tree=remote_tree,
                 )
                 logger.debug(
                     f"Saved sync state with {len(current_synced_files)} files "
@@ -468,14 +468,14 @@ class SyncEngine:
         # for streaming mode - only traditional mode supports it
         previous_synced_files: set[str] = set()
         if pair.sync_mode == SyncMode.TWO_WAY:
-            state = self.state_manager.load_state(pair.local, pair.remote)
+            state = self.state_manager.load_state(pair.source, pair.destination)
             if state:
                 previous_synced_files = state.synced_files
                 logger.debug(
                     f"Loaded previous sync state with "
                     f"{len(previous_synced_files)} files, "
-                    f"local_tree: {state.local_tree.size}, "
-                    f"remote_tree: {state.remote_tree.size}"
+                    f"local_tree: {state.source_tree.size}, "
+                    f"remote_tree: {state.destination_tree.size}"
                 )
 
         # Step 1: Scan local files if needed
@@ -496,11 +496,11 @@ class SyncEngine:
         synced_files: set[str] = set()
 
         # Track synced file objects for building trees
-        synced_local_file_map: dict[str, LocalFile] = {}
-        synced_remote_file_map: dict[str, RemoteFile] = {}
+        synced_local_file_map: dict[str, SourceFile] = {}
+        synced_remote_file_map: dict[str, DestinationFile] = {}
 
         # Step 2: Process remote files in batches
-        if pair.sync_mode.requires_remote_scan:
+        if pair.sync_mode.requires_destination_scan:
             self._process_remote_batches_streaming(
                 pair=pair,
                 local_file_map=local_file_map,
@@ -519,7 +519,7 @@ class SyncEngine:
             )
 
         # Step 3: Handle local-only files (files that don't exist remotely)
-        if pair.sync_mode.requires_local_scan:
+        if pair.sync_mode.requires_source_scan:
             self._process_local_only_files_streaming(
                 pair=pair,
                 local_files=local_files,
@@ -538,19 +538,19 @@ class SyncEngine:
         # Step 4: Save sync state after successful sync (for TWO_WAY mode)
         if pair.sync_mode == SyncMode.TWO_WAY:
             # Build full tree state from tracked file objects
-            local_tree = build_local_tree_from_files(
+            local_tree = build_source_tree_from_files(
                 list(synced_local_file_map.values())
             )
-            remote_tree = build_remote_tree_from_files(
+            remote_tree = build_destination_tree_from_files(
                 list(synced_remote_file_map.values())
             )
 
             self.state_manager.save_state(
-                pair.local,
-                pair.remote,
+                pair.source,
+                pair.destination,
                 synced_files=synced_files,
-                local_tree=local_tree,
-                remote_tree=remote_tree,
+                source_tree=local_tree,
+                destination_tree=remote_tree,
             )
             logger.debug(
                 f"Saved sync state with {len(synced_files)} files "
@@ -577,7 +577,7 @@ class SyncEngine:
     ) -> dict:
         """Incremental sync: process directories level by level.
 
-        This mode is optimized for LOCAL_TO_CLOUD and LOCAL_BACKUP sync modes
+        This mode is optimized for SOURCE_TO_DESTINATION and SOURCE_BACKUP sync modes
         with huge local directories. Instead of scanning the entire local tree
         upfront, it:
         1. Scans one directory level at a time
@@ -624,13 +624,13 @@ class SyncEngine:
         # When remote is "/" or empty, files sync directly to cloud root (folder_id=0)
         remote_folder_id = self._setup_incremental_remote(pair, manager, dry_run)
         logger.debug(
-            f"Remote folder setup: remote='{pair.remote}', "
+            f"Remote folder setup: remote='{pair.destination}', "
             f"folder_id={remote_folder_id}, dry_run={dry_run}"
         )
 
         # Determine effective remote folder name for display
-        syncing_to_root = not pair.remote or pair.remote == "/"
-        effective_remote_name = "/ (root)" if syncing_to_root else pair.remote
+        syncing_to_root = not pair.destination or pair.destination == "/"
+        effective_remote_name = "/ (root)" if syncing_to_root else pair.destination
 
         # Show remote folder status to user
         if not self.output.quiet:
@@ -678,7 +678,7 @@ class SyncEngine:
         local_file_set: set[str] = set()
 
         # Process directories using BFS
-        dirs_to_process = [pair.local]
+        dirs_to_process = [pair.source]
         total_files_processed = 0
         total_dirs_processed = 0
 
@@ -723,9 +723,9 @@ class SyncEngine:
                     f"{stats['uploads']} uploads in {elapsed:.1f}s"
                 )
 
-        # Handle remote deletions for LOCAL_TO_CLOUD mode
+        # Handle remote deletions for SOURCE_TO_DESTINATION mode
         # (files that exist remotely but not locally should be deleted)
-        if pair.sync_mode == SyncMode.LOCAL_TO_CLOUD:
+        if pair.sync_mode == SyncMode.SOURCE_TO_DESTINATION:
             files_to_delete = remote_file_set - local_file_set
             if files_to_delete:
                 self._delete_remote_files_incremental(
@@ -766,13 +766,13 @@ class SyncEngine:
             doesn't exist and couldn't be created
         """
         # When remote is "/" or empty, sync directly to root (folder_id=0)
-        syncing_to_root = not pair.remote or pair.remote == "/"
+        syncing_to_root = not pair.destination or pair.destination == "/"
         if syncing_to_root:
             logger.debug("Syncing directly to cloud root (folder_id=0)")
             return 0  # 0 means root folder
 
         # For non-root remote paths, find or create the folder
-        effective_folder_name = pair.remote.lstrip("/")
+        effective_folder_name = pair.destination.lstrip("/")
 
         # Try to find existing folder
         remote_folder_id = None
@@ -818,7 +818,7 @@ class SyncEngine:
     ) -> tuple[set[str], dict[str, int], dict[str, int]]:
         """Get set of existing remote file paths for idempotency checking.
 
-        This is used by LOCAL_BACKUP and LOCAL_TO_CLOUD modes to skip files
+        This is used by SOURCE_BACKUP and SOURCE_TO_DESTINATION modes to skip files
         that already exist remotely (basic idempotency).
 
         Args:
@@ -839,9 +839,9 @@ class SyncEngine:
             logger.debug("Remote folder not found, skipping remote file scan")
             return remote_file_set, remote_file_ids, remote_file_sizes
 
-        # Both LOCAL_BACKUP and LOCAL_TO_CLOUD need to check remote files
+        # Both SOURCE_BACKUP and SOURCE_TO_DESTINATION need to check remote files
         # for idempotency (to avoid re-uploading existing files)
-        if pair.sync_mode in (SyncMode.LOCAL_BACKUP, SyncMode.LOCAL_TO_CLOUD):
+        if pair.sync_mode in (SyncMode.SOURCE_BACKUP, SyncMode.SOURCE_TO_DESTINATION):
             try:
                 entries_with_paths = manager.get_all_recursive(
                     folder_id=remote_folder_id,
@@ -902,8 +902,8 @@ class SyncEngine:
 
         # Calculate relative directory path
         rel_dir = (
-            str(current_dir.relative_to(pair.local))
-            if current_dir != pair.local
+            str(current_dir.relative_to(pair.source))
+            if current_dir != pair.source
             else "."
         )
 
@@ -913,8 +913,8 @@ class SyncEngine:
 
         # Scan directory
         try:
-            files, subdirs = scanner.scan_local_single_level(
-                current_dir, base_path=pair.local
+            files, subdirs = scanner.scan_source_single_level(
+                current_dir, base_path=pair.source
             )
         except (OSError, PermissionError) as e:
             logger.debug(f"Cannot scan {current_dir}: {e}")
@@ -928,7 +928,7 @@ class SyncEngine:
 
         # Add subdirectories to result
         for subdir_rel in subdirs:
-            result["subdirs"].append(pair.local / subdir_rel)
+            result["subdirs"].append(pair.source / subdir_rel)
 
         # Show directory info if only subdirs
         if not self.output.quiet and not sync_progress_tracker:
@@ -996,11 +996,11 @@ class SyncEngine:
 
     def _filter_files_for_upload(
         self,
-        files: list[LocalFile],
+        files: list[SourceFile],
         remote_file_set: set[str],
         remote_file_sizes: dict[str, int],
         stats: dict,
-    ) -> tuple[list[LocalFile], int]:
+    ) -> tuple[list[SourceFile], int]:
         """Filter files that need to be uploaded.
 
         Args:
@@ -1034,7 +1034,7 @@ class SyncEngine:
 
     def _execute_incremental_uploads(
         self,
-        upload_files: list[LocalFile],
+        upload_files: list[SourceFile],
         rel_dir: str,
         pair: SyncPair,
         stats: dict,
@@ -1066,8 +1066,8 @@ class SyncEngine:
             SyncDecision(
                 action=SyncAction.UPLOAD,
                 reason="New local file",
-                local_file=local_file,
-                remote_file=None,
+                source_file=local_file,
+                destination_file=None,
                 relative_path=local_file.relative_path,
             )
             for local_file in upload_files
@@ -1228,9 +1228,9 @@ class SyncEngine:
             else:
                 # Sequential execution with progress tracking
                 for decision in actionable_decisions:
-                    if decision.action == SyncAction.UPLOAD and decision.local_file:
+                    if decision.action == SyncAction.UPLOAD and decision.source_file:
                         file_path = decision.relative_path
-                        file_size = decision.local_file.size
+                        file_size = decision.source_file.size
 
                         # Notify file start
                         sync_progress_tracker.on_upload_file_start(file_path, file_size)
@@ -1273,9 +1273,9 @@ class SyncEngine:
                             )
                             if decision.action == SyncAction.DOWNLOAD:
                                 stats["downloads"] += 1
-                            elif decision.action == SyncAction.DELETE_LOCAL:
+                            elif decision.action == SyncAction.DELETE_SOURCE:
                                 stats["deletes_local"] += 1
-                            elif decision.action == SyncAction.DELETE_REMOTE:
+                            elif decision.action == SyncAction.DELETE_DESTINATION:
                                 stats["deletes_remote"] += 1
                         except Exception as e:
                             stats["errors"] = stats.get("errors", 0) + 1
@@ -1349,7 +1349,7 @@ class SyncEngine:
             semaphore = self.concurrency_limits.get_semaphore_for_operation(is_transfer)
 
             file_path = decision.relative_path
-            file_size = decision.local_file.size if decision.local_file else 0
+            file_size = decision.source_file.size if decision.source_file else 0
 
             # Notify file start for uploads
             if decision.action == SyncAction.UPLOAD:
@@ -1416,9 +1416,9 @@ class SyncEngine:
                                 stats["uploads"] += 1
                             elif action == SyncAction.DOWNLOAD:
                                 stats["downloads"] += 1
-                            elif action == SyncAction.DELETE_LOCAL:
+                            elif action == SyncAction.DELETE_SOURCE:
                                 stats["deletes_local"] += 1
-                            elif action == SyncAction.DELETE_REMOTE:
+                            elif action == SyncAction.DELETE_DESTINATION:
                                 stats["deletes_remote"] += 1
                         else:
                             stats["errors"] += 1
@@ -1451,7 +1451,7 @@ class SyncEngine:
         Returns:
             List of local files
         """
-        if not pair.sync_mode.requires_local_scan:
+        if not pair.sync_mode.requires_source_scan:
             return []
 
         scanner = DirectoryScanner(
@@ -1464,7 +1464,7 @@ class SyncEngine:
             with self.progress_bar_factory.create_progress_bar() as progress:
                 scan_start = time.time()
                 task = progress.add_task("Scanning local directory...", total=None)
-                local_files = scanner.scan_local(pair.local)
+                local_files = scanner.scan_source(pair.source)
                 scan_elapsed = time.time() - scan_start
                 progress.update(
                     task, description=f"Found {len(local_files)} local file(s)"
@@ -1476,7 +1476,7 @@ class SyncEngine:
         else:
             # Scan without Rich progress (external display is active)
             scan_start = time.time()
-            local_files = scanner.scan_local(pair.local)
+            local_files = scanner.scan_source(pair.source)
             scan_elapsed = time.time() - scan_start
             logger.debug(
                 f"Local scan took {scan_elapsed:.2f}s for {len(local_files)} files"
@@ -1516,10 +1516,10 @@ class SyncEngine:
         resolve_start = time.time()
         remote_folder_id = None
 
-        if pair.remote and pair.remote != "/":
+        if pair.destination and pair.destination != "/":
             try:
                 # Strip leading slash for folder lookup
-                folder_path = pair.remote.lstrip("/")
+                folder_path = pair.destination.lstrip("/")
                 logger.debug("Resolving folder path: %s", folder_path)
 
                 # Check if this is a nested path (contains /)
@@ -1580,8 +1580,8 @@ class SyncEngine:
         start_delay: float = 0.0,
         previous_synced_files: Optional[set[str]] = None,
         synced_files: Optional[set[str]] = None,
-        synced_local_file_map: Optional[dict[str, LocalFile]] = None,
-        synced_remote_file_map: Optional[dict[str, RemoteFile]] = None,
+        synced_local_file_map: Optional[dict[str, SourceFile]] = None,
+        synced_remote_file_map: Optional[dict[str, DestinationFile]] = None,
     ) -> None:
         """Process remote files in batches for streaming sync.
 
@@ -1614,7 +1614,7 @@ class SyncEngine:
 
         # If we're syncing to a specific remote folder and it doesn't exist yet,
         # skip remote scan (no files to download/compare yet)
-        if pair.remote and pair.remote != "/" and remote_folder_id is None:
+        if pair.destination and pair.destination != "/" and remote_folder_id is None:
             logger.debug("Remote folder not found, skipping remote scan")
             return
 
@@ -1697,7 +1697,7 @@ class SyncEngine:
         max_workers: int,
         start_delay: float = 0.0,
         previous_synced_files: Optional[set[str]] = None,
-    ) -> tuple[dict, set[str], dict[str, LocalFile], dict[str, RemoteFile]]:
+    ) -> tuple[dict, set[str], dict[str, SourceFile], dict[str, DestinationFile]]:
         """Process a single batch of remote entries.
 
         Args:
@@ -1724,7 +1724,7 @@ class SyncEngine:
         )
 
         # Convert to RemoteFile objects
-        remote_files = scanner.scan_remote(entries_batch)
+        remote_files = scanner.scan_destination(entries_batch)
 
         sample_paths = [f.relative_path for f in remote_files[:3]]
         logger.debug("Sample remote paths: %s", sample_paths)
@@ -1761,8 +1761,8 @@ class SyncEngine:
 
         # Track successfully synced files and their objects
         synced_in_batch: set[str] = set()
-        synced_local_in_batch: dict[str, LocalFile] = {}
-        synced_remote_in_batch: dict[str, RemoteFile] = {}
+        synced_local_in_batch: dict[str, SourceFile] = {}
+        synced_remote_in_batch: dict[str, DestinationFile] = {}
 
         # Build remote file map for this batch
         remote_file_map = {f.relative_path: f for f in remote_files}
@@ -1771,8 +1771,8 @@ class SyncEngine:
             if decision.action == SyncAction.SKIP:
                 # Files that were already in sync
                 synced_in_batch.add(decision.relative_path)
-                if decision.local_file:
-                    synced_local_in_batch[decision.relative_path] = decision.local_file
+                if decision.source_file:
+                    synced_local_in_batch[decision.relative_path] = decision.source_file
                 if decision.relative_path in remote_file_map:
                     synced_remote_in_batch[decision.relative_path] = remote_file_map[
                         decision.relative_path
@@ -1780,8 +1780,8 @@ class SyncEngine:
             elif decision.action == SyncAction.UPLOAD:
                 # Files uploaded to remote (now exist in both)
                 synced_in_batch.add(decision.relative_path)
-                if decision.local_file:
-                    synced_local_in_batch[decision.relative_path] = decision.local_file
+                if decision.source_file:
+                    synced_local_in_batch[decision.relative_path] = decision.source_file
                 # Note: remote file doesn't exist yet in this batch context
             elif decision.action == SyncAction.DOWNLOAD:
                 # Files downloaded to local (now exist in both)
@@ -1795,7 +1795,7 @@ class SyncEngine:
                     synced_local_in_batch[decision.relative_path] = local_file_map[
                         decision.relative_path
                     ]
-            # DELETE_LOCAL and DELETE_REMOTE are NOT added (they no longer exist)
+            # DELETE_SOURCE and DELETE_DESTINATION are NOT added (they no longer exist)
 
         # Debug: print when batch is complete
         logger.debug("Batch %d complete, waiting for next batch...", batch_num)
@@ -1915,13 +1915,13 @@ class SyncEngine:
                 stats["uploads"] += 1
             elif decision.action == SyncAction.DOWNLOAD:
                 stats["downloads"] += 1
-            elif decision.action == SyncAction.DELETE_LOCAL:
+            elif decision.action == SyncAction.DELETE_SOURCE:
                 stats["deletes_local"] += 1
-            elif decision.action == SyncAction.DELETE_REMOTE:
+            elif decision.action == SyncAction.DELETE_DESTINATION:
                 stats["deletes_remote"] += 1
-            elif decision.action == SyncAction.RENAME_LOCAL:
+            elif decision.action == SyncAction.RENAME_SOURCE:
                 stats["renames_local"] = stats.get("renames_local", 0) + 1
-            elif decision.action == SyncAction.RENAME_REMOTE:
+            elif decision.action == SyncAction.RENAME_DESTINATION:
                 stats["renames_remote"] = stats.get("renames_remote", 0) + 1
         except Exception as e:
             if not self.output.quiet:
@@ -1940,7 +1940,7 @@ class SyncEngine:
         start_delay: float = 0.0,
         previous_synced_files: Optional[set[str]] = None,
         synced_files: Optional[set[str]] = None,
-        synced_local_file_map: Optional[dict[str, LocalFile]] = None,
+        synced_local_file_map: Optional[dict[str, SourceFile]] = None,
     ) -> None:
         """Process local-only files for streaming sync.
 
@@ -2013,9 +2013,9 @@ class SyncEngine:
                 for decision in local_decisions:
                     if decision.action == SyncAction.UPLOAD:
                         synced_files.add(decision.relative_path)
-                        if synced_local_file_map is not None and decision.local_file:
+                        if synced_local_file_map is not None and decision.source_file:
                             synced_local_file_map[decision.relative_path] = (
-                                decision.local_file
+                                decision.source_file
                             )
         else:
             for decision in local_decisions:
@@ -2030,12 +2030,12 @@ class SyncEngine:
                 # Track synced files (uploaded files)
                 if synced_files is not None and decision.action == SyncAction.UPLOAD:
                     synced_files.add(decision.relative_path)
-                    if synced_local_file_map is not None and decision.local_file:
+                    if synced_local_file_map is not None and decision.source_file:
                         synced_local_file_map[decision.relative_path] = (
-                            decision.local_file
+                            decision.source_file
                         )
 
-    def _scan_remote(self, pair: SyncPair) -> list[RemoteFile]:
+    def _scan_remote(self, pair: SyncPair) -> list[DestinationFile]:
         """Scan remote directory for files.
 
         Args:
@@ -2052,10 +2052,10 @@ class SyncEngine:
 
         # Resolve remote path to folder ID
         remote_folder_id = None
-        if pair.remote and pair.remote != "/":
+        if pair.destination and pair.destination != "/":
             try:
                 # Strip leading slash for folder lookup (consistent with streaming mode)
-                folder_name = pair.remote.lstrip("/")
+                folder_name = pair.destination.lstrip("/")
                 folder_entry = manager.find_folder_by_name(folder_name)
                 if folder_entry:
                     remote_folder_id = folder_entry.id
@@ -2070,7 +2070,7 @@ class SyncEngine:
         )
 
         # Convert to RemoteFile objects
-        remote_files = scanner.scan_remote(entries_with_paths)
+        remote_files = scanner.scan_destination(entries_with_paths)
         return remote_files
 
     def _categorize_decisions(self, decisions: list[SyncDecision]) -> dict:
@@ -2098,13 +2098,13 @@ class SyncEngine:
                 stats["uploads"] += 1
             elif decision.action == SyncAction.DOWNLOAD:
                 stats["downloads"] += 1
-            elif decision.action == SyncAction.DELETE_LOCAL:
+            elif decision.action == SyncAction.DELETE_SOURCE:
                 stats["deletes_local"] += 1
-            elif decision.action == SyncAction.DELETE_REMOTE:
+            elif decision.action == SyncAction.DELETE_DESTINATION:
                 stats["deletes_remote"] += 1
-            elif decision.action == SyncAction.RENAME_LOCAL:
+            elif decision.action == SyncAction.RENAME_SOURCE:
                 stats["renames_local"] += 1
-            elif decision.action == SyncAction.RENAME_REMOTE:
+            elif decision.action == SyncAction.RENAME_DESTINATION:
                 stats["renames_remote"] += 1
             elif decision.action == SyncAction.CONFLICT:
                 stats["conflicts"] += 1
@@ -2177,8 +2177,8 @@ class SyncEngine:
                     relative_path=decision.relative_path,
                     action=SyncAction.SKIP,
                     reason="Conflict - skipping",
-                    local_file=decision.local_file,
-                    remote_file=decision.remote_file,
+                    source_file=decision.source_file,
+                    destination_file=decision.destination_file,
                 )
                 updated_decisions.append(updated_decision)
             else:
@@ -2228,10 +2228,10 @@ class SyncEngine:
         # Order: renames (local then remote) -> deletes -> uploads -> downloads
         def get_action_priority(decision: SyncDecision) -> int:
             priorities = {
-                SyncAction.RENAME_LOCAL: 0,  # Local renames first
-                SyncAction.RENAME_REMOTE: 1,  # Remote renames second
-                SyncAction.DELETE_LOCAL: 2,  # Local deletes third
-                SyncAction.DELETE_REMOTE: 3,  # Remote deletes fourth
+                SyncAction.RENAME_SOURCE: 0,  # Local renames first
+                SyncAction.RENAME_DESTINATION: 1,  # Remote renames second
+                SyncAction.DELETE_SOURCE: 2,  # Local deletes third
+                SyncAction.DELETE_DESTINATION: 3,  # Remote deletes fourth
                 SyncAction.UPLOAD: 4,  # Uploads fifth
                 SyncAction.DOWNLOAD: 5,  # Downloads sixth
             }
@@ -2241,16 +2241,16 @@ class SyncEngine:
 
         # Group decisions by action type for execution
         rename_local = [
-            d for d in ordered_decisions if d.action == SyncAction.RENAME_LOCAL
+            d for d in ordered_decisions if d.action == SyncAction.RENAME_SOURCE
         ]
         rename_remote = [
-            d for d in ordered_decisions if d.action == SyncAction.RENAME_REMOTE
+            d for d in ordered_decisions if d.action == SyncAction.RENAME_DESTINATION
         ]
         delete_local = [
-            d for d in ordered_decisions if d.action == SyncAction.DELETE_LOCAL
+            d for d in ordered_decisions if d.action == SyncAction.DELETE_SOURCE
         ]
         delete_remote = [
-            d for d in ordered_decisions if d.action == SyncAction.DELETE_REMOTE
+            d for d in ordered_decisions if d.action == SyncAction.DELETE_DESTINATION
         ]
         uploads = [d for d in ordered_decisions if d.action == SyncAction.UPLOAD]
         downloads = [d for d in ordered_decisions if d.action == SyncAction.DOWNLOAD]
@@ -2579,7 +2579,7 @@ class SyncEngine:
         progress_callback: Optional[Callable[[int, int], None]],
     ) -> None:
         """Execute an upload operation with race condition handling."""
-        local_file = decision.local_file
+        local_file = decision.source_file
         if not local_file:
             return
 
@@ -2594,13 +2594,13 @@ class SyncEngine:
         action_start = time.time()
 
         # Construct full remote path including the remote folder
-        if pair.remote:
-            full_remote_path = f"{pair.remote}/{decision.relative_path}"
+        if pair.destination:
+            full_remote_path = f"{pair.destination}/{decision.relative_path}"
         else:
             full_remote_path = decision.relative_path
 
         self.operations.upload_file(
-            local_file=local_file,
+            source_file=local_file,
             remote_path=full_remote_path,
             storage_id=pair.storage_id,
             chunk_size=chunk_size,
@@ -2617,13 +2617,13 @@ class SyncEngine:
         progress_callback: Optional[Callable[[int, int], None]],
     ) -> None:
         """Execute a download operation with retry logic."""
-        remote_file = decision.remote_file
+        remote_file = decision.destination_file
         if not remote_file:
             return
 
         logger.debug(f"Downloading {decision.relative_path}...")
         action_start = time.time()
-        local_path = pair.local / decision.relative_path
+        local_path = pair.source / decision.relative_path
 
         # Retry download for transient errors
         max_retries = DEFAULT_MAX_RETRIES
@@ -2639,7 +2639,7 @@ class SyncEngine:
 
             try:
                 self.operations.download_file(
-                    remote_file=remote_file,
+                    destination_file=remote_file,
                     local_path=local_path,
                     progress_callback=progress_callback,
                 )
@@ -2671,7 +2671,7 @@ class SyncEngine:
 
     def _execute_delete_local(self, decision: SyncDecision, pair: SyncPair) -> None:
         """Execute a local delete operation with race condition handling."""
-        local_file = decision.local_file
+        local_file = decision.source_file
         if not local_file:
             return
 
@@ -2684,9 +2684,9 @@ class SyncEngine:
 
         try:
             self.operations.delete_local(
-                local_file=local_file,
-                use_trash=pair.use_local_trash,
-                sync_root=pair.local,
+                source_file=local_file,
+                use_trash=pair.use_source_trash,
+                sync_root=pair.source,
             )
         except FileNotFoundError:
             logger.debug(
@@ -2696,12 +2696,12 @@ class SyncEngine:
 
     def _execute_delete_remote(self, decision: SyncDecision) -> None:
         """Execute a remote delete operation with race condition handling."""
-        remote_file = decision.remote_file
+        remote_file = decision.destination_file
         if not remote_file:
             return
 
         try:
-            self.operations.delete_remote(remote_file=remote_file, permanent=False)
+            self.operations.delete_remote(destination_file=remote_file, permanent=False)
         except Exception as e:
             # Race condition handling: ignore if file doesn't exist
             error_str = str(e).lower()
@@ -2712,7 +2712,7 @@ class SyncEngine:
 
     def _execute_rename_local(self, decision: SyncDecision, pair: SyncPair) -> None:
         """Execute a local rename operation with race condition handling."""
-        local_file = decision.local_file
+        local_file = decision.source_file
         if not local_file or not decision.new_path:
             return
 
@@ -2728,9 +2728,9 @@ class SyncEngine:
 
         try:
             self.operations.rename_local(
-                local_file=local_file,
+                source_file=local_file,
                 new_relative_path=decision.new_path,
-                sync_root=pair.local,
+                sync_root=pair.source,
             )
             action_elapsed = time.time() - action_start
             logger.debug(f"Local rename took {action_elapsed:.2f}s")
@@ -2739,7 +2739,7 @@ class SyncEngine:
 
     def _execute_rename_remote(self, decision: SyncDecision) -> None:
         """Execute a remote rename operation with race condition handling."""
-        remote_file = decision.remote_file
+        remote_file = decision.destination_file
         if not remote_file or not decision.new_path:
             return
 
@@ -2750,7 +2750,7 @@ class SyncEngine:
             # Extract just the filename from the new path
             new_name = decision.new_path.rsplit("/", 1)[-1]
             self.operations.rename_remote(
-                remote_file=remote_file,
+                destination_file=remote_file,
                 new_name=new_name,
                 new_parent_id=None,  # Same folder for now
             )
@@ -2799,13 +2799,13 @@ class SyncEngine:
                 )
             elif decision.action == SyncAction.DOWNLOAD:
                 self._execute_download(decision, pair, progress_callback)
-            elif decision.action == SyncAction.DELETE_LOCAL:
+            elif decision.action == SyncAction.DELETE_SOURCE:
                 self._execute_delete_local(decision, pair)
-            elif decision.action == SyncAction.DELETE_REMOTE:
+            elif decision.action == SyncAction.DELETE_DESTINATION:
                 self._execute_delete_remote(decision)
-            elif decision.action == SyncAction.RENAME_LOCAL:
+            elif decision.action == SyncAction.RENAME_SOURCE:
                 self._execute_rename_local(decision, pair)
-            elif decision.action == SyncAction.RENAME_REMOTE:
+            elif decision.action == SyncAction.RENAME_DESTINATION:
                 self._execute_rename_remote(decision)
 
         except Exception:
@@ -2837,8 +2837,8 @@ class SyncEngine:
         folders_to_create: set[str] = set()
         for decision in upload_decisions:
             # Construct full remote path
-            if pair.remote:
-                full_path = f"{pair.remote}/{decision.relative_path}"
+            if pair.destination:
+                full_path = f"{pair.destination}/{decision.relative_path}"
             else:
                 full_path = decision.relative_path
 
@@ -3008,13 +3008,13 @@ class SyncEngine:
                                 stats["uploads"] += 1
                             elif action == SyncAction.DOWNLOAD:
                                 stats["downloads"] += 1
-                            elif action == SyncAction.DELETE_LOCAL:
+                            elif action == SyncAction.DELETE_SOURCE:
                                 stats["deletes_local"] += 1
-                            elif action == SyncAction.DELETE_REMOTE:
+                            elif action == SyncAction.DELETE_DESTINATION:
                                 stats["deletes_remote"] += 1
-                            elif action == SyncAction.RENAME_LOCAL:
+                            elif action == SyncAction.RENAME_SOURCE:
                                 stats["renames_local"] += 1
-                            elif action == SyncAction.RENAME_REMOTE:
+                            elif action == SyncAction.RENAME_DESTINATION:
                                 stats["renames_remote"] += 1
 
                             logger.debug(f"Completed {path} in {elapsed:.2f}s")
@@ -3284,8 +3284,9 @@ class SyncEngine:
             remote_entry: The remote folder entry to download
             local_path: Local directory path to download into
             storage_id: Storage ID (0 for personal/default storage)
-            overwrite: If True, overwrite existing local files (CLOUD_BACKUP mode).
-                      If False, delete local files not in cloud (CLOUD_TO_LOCAL mode).
+            overwrite: If True, overwrite existing local files
+                (DESTINATION_BACKUP mode). If False, delete local files
+                not in cloud (DESTINATION_TO_SOURCE mode).
             max_workers: Number of parallel download workers
             progress_callback: Optional callback for progress updates
 
@@ -3315,9 +3316,12 @@ class SyncEngine:
         local_path.mkdir(parents=True, exist_ok=True)
 
         # Choose sync mode based on overwrite flag
-        # CLOUD_BACKUP: Download only, never delete local files
-        # CLOUD_TO_LOCAL: Mirror cloud to local (deletes local files not in cloud)
-        sync_mode = SyncMode.CLOUD_BACKUP if overwrite else SyncMode.CLOUD_TO_LOCAL
+        # DESTINATION_BACKUP: Download only, never delete local files
+        # DESTINATION_TO_SOURCE: Mirror cloud to local
+        # (deletes local files not in cloud)
+        sync_mode = (
+            SyncMode.DESTINATION_BACKUP if overwrite else SyncMode.DESTINATION_TO_SOURCE
+        )
 
         if not self.output.quiet:
             mode_desc = "overwrite" if overwrite else "mirror (will delete local-only)"
@@ -3345,7 +3349,7 @@ class SyncEngine:
             )
 
         # Convert to RemoteFile objects (filters out folders)
-        remote_files = scanner.scan_remote(entries_with_paths)
+        remote_files = scanner.scan_destination(entries_with_paths)
 
         if not remote_files:
             if not self.output.quiet:
@@ -3356,9 +3360,9 @@ class SyncEngine:
         remote_file_map = {f.relative_path: f for f in remote_files}
 
         # Scan local files if needed for comparison
-        local_file_map: dict[str, LocalFile] = {}
-        if sync_mode.requires_local_scan:
-            local_files = scanner.scan_local(local_path)
+        local_file_map: dict[str, SourceFile] = {}
+        if sync_mode.requires_source_scan:
+            local_files = scanner.scan_source(local_path)
             local_file_map = {f.relative_path: f for f in local_files}
 
         # Compare and create decisions
@@ -3387,8 +3391,8 @@ class SyncEngine:
 
         # Create a temporary pair for execution
         temp_pair = SyncPair(
-            local=local_path,
-            remote="",  # Not used for download-only
+            source=local_path,
+            destination="",  # Not used for download-only
             sync_mode=sync_mode,
             storage_id=storage_id,
         )
@@ -3483,7 +3487,7 @@ class SyncEngine:
 
         with self.progress_bar_factory.create_progress_bar() as progress:
             task = progress.add_task("Scanning local directory...", total=None)
-            local_files = scanner.scan_local(local_path)
+            local_files = scanner.scan_source(local_path)
             progress.update(task, description=f"Found {len(local_files)} local file(s)")
 
         if not local_files:
@@ -3512,8 +3516,8 @@ class SyncEngine:
             decision = SyncDecision(
                 action=SyncAction.UPLOAD,
                 reason="New local file",
-                local_file=local_file,
-                remote_file=None,
+                source_file=local_file,
+                destination_file=None,
                 relative_path=upload_path,
             )
             upload_decisions.append(decision)
@@ -3534,9 +3538,9 @@ class SyncEngine:
 
         # Create a temporary pair for execution
         temp_pair = SyncPair(
-            local=local_path,
-            remote=remote_path,
-            sync_mode=SyncMode.LOCAL_BACKUP,
+            source=local_path,
+            destination=remote_path,
+            sync_mode=SyncMode.SOURCE_BACKUP,
             storage_id=storage_id,
         )
 

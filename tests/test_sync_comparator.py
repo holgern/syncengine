@@ -4,24 +4,24 @@ import time
 from pathlib import Path
 from unittest.mock import Mock
 
-from syncengine.models import FileEntry
 from syncengine.comparator import FileComparator, SyncAction, SyncDecision
+from syncengine.models import FileEntry
 from syncengine.modes import SyncMode
-from syncengine.scanner import LocalFile, RemoteFile
+from syncengine.scanner import DestinationFile, SourceFile
 from syncengine.state import (
-    LocalItemState,
-    LocalTree,
-    RemoteItemState,
-    RemoteTree,
+    DestinationItemState,
+    DestinationTree,
+    SourceItemState,
+    SourceTree,
 )
 
 
 class TestHandleLocalOnly:
     """Tests for handling local-only files (files that don't exist remotely)."""
 
-    def _create_local_file(self, relative_path: str = "test.txt") -> LocalFile:
-        """Create a LocalFile for testing."""
-        return LocalFile(
+    def _create_local_file(self, relative_path: str = "test.txt") -> SourceFile:
+        """Create a SourceFile for testing."""
+        return SourceFile(
             path=Path(f"/local/{relative_path}"),
             relative_path=relative_path,
             size=100,
@@ -33,47 +33,47 @@ class TestHandleLocalOnly:
         comparator = FileComparator(SyncMode.TWO_WAY)
         local_file = self._create_local_file()
 
-        decision = comparator._handle_local_only("test.txt", local_file, {}, {})
+        decision = comparator._handle_source_only("test.txt", local_file, {}, {})
 
         assert decision.action == SyncAction.UPLOAD
-        assert decision.reason == "New local file"
+        assert decision.reason == "New source file"
 
     def test_local_only_local_to_cloud_uploads(self):
-        """LOCAL_TO_CLOUD mode should upload local-only files."""
-        comparator = FileComparator(SyncMode.LOCAL_TO_CLOUD)
+        """SOURCE_TO_DESTINATION mode should upload source-only files."""
+        comparator = FileComparator(SyncMode.SOURCE_TO_DESTINATION)
         local_file = self._create_local_file()
 
-        decision = comparator._handle_local_only("test.txt", local_file, {}, {})
+        decision = comparator._handle_source_only("test.txt", local_file, {}, {})
 
         assert decision.action == SyncAction.UPLOAD
-        assert decision.reason == "New local file"
+        assert decision.reason == "New source file"
 
     def test_local_only_local_backup_uploads(self):
-        """LOCAL_BACKUP mode should upload local-only files."""
-        comparator = FileComparator(SyncMode.LOCAL_BACKUP)
+        """SOURCE_BACKUP mode should upload source-only files."""
+        comparator = FileComparator(SyncMode.SOURCE_BACKUP)
         local_file = self._create_local_file()
 
-        decision = comparator._handle_local_only("test.txt", local_file, {}, {})
+        decision = comparator._handle_source_only("test.txt", local_file, {}, {})
 
         assert decision.action == SyncAction.UPLOAD
-        assert decision.reason == "New local file"
+        assert decision.reason == "New source file"
 
     def test_local_only_cloud_to_local_deletes_local(self):
-        """CLOUD_TO_LOCAL mode should delete local-only files (deleted from cloud)."""
-        comparator = FileComparator(SyncMode.CLOUD_TO_LOCAL)
+        """DESTINATION_TO_SOURCE mode deletes source-only files."""
+        comparator = FileComparator(SyncMode.DESTINATION_TO_SOURCE)
         local_file = self._create_local_file()
 
-        decision = comparator._handle_local_only("test.txt", local_file, {}, {})
+        decision = comparator._handle_source_only("test.txt", local_file, {}, {})
 
-        assert decision.action == SyncAction.DELETE_LOCAL
-        assert decision.reason == "File deleted from cloud"
+        assert decision.action == SyncAction.DELETE_SOURCE
+        assert decision.reason == "File deleted from destination"
 
     def test_local_only_cloud_backup_skips(self):
         """CLOUD_BACKUP mode should skip local-only files (no upload, no delete)."""
-        comparator = FileComparator(SyncMode.CLOUD_BACKUP)
+        comparator = FileComparator(SyncMode.DESTINATION_BACKUP)
         local_file = self._create_local_file()
 
-        decision = comparator._handle_local_only("test.txt", local_file, {}, {})
+        decision = comparator._handle_source_only("test.txt", local_file, {}, {})
 
         assert decision.action == SyncAction.SKIP
         assert "prevents action" in decision.reason
@@ -82,55 +82,55 @@ class TestHandleLocalOnly:
 class TestHandleRemoteOnly:
     """Tests for handling remote-only files (files that don't exist locally)."""
 
-    def _create_remote_file(self, relative_path: str = "test.txt") -> RemoteFile:
-        """Create a RemoteFile for testing."""
+    def _create_remote_file(self, relative_path: str = "test.txt") -> DestinationFile:
+        """Create a DestinationFile for testing."""
         mock_entry = Mock(spec=FileEntry)
         mock_entry.id = 123
         mock_entry.name = relative_path.split("/")[-1]
         mock_entry.file_size = 100
         mock_entry.hash = "abc123"
         mock_entry.updated_at = "2024-01-01T00:00:00Z"
-        return RemoteFile(
+        return DestinationFile(
             entry=mock_entry,
             relative_path=relative_path,
         )
 
     def test_remote_only_two_way_downloads(self):
-        """TWO_WAY mode should download remote-only files."""
+        """TWO_WAY mode should download destination-only files."""
         comparator = FileComparator(SyncMode.TWO_WAY)
         remote_file = self._create_remote_file()
 
-        decision = comparator._handle_remote_only("test.txt", remote_file, {}, {})
+        decision = comparator._handle_destination_only("test.txt", remote_file, {}, {})
 
         assert decision.action == SyncAction.DOWNLOAD
-        assert decision.reason == "New remote file"
+        assert decision.reason == "New destination file"
 
     def test_remote_only_cloud_to_local_downloads(self):
-        """CLOUD_TO_LOCAL mode should download remote-only files."""
-        comparator = FileComparator(SyncMode.CLOUD_TO_LOCAL)
+        """DESTINATION_TO_SOURCE mode should download destination-only files."""
+        comparator = FileComparator(SyncMode.DESTINATION_TO_SOURCE)
         remote_file = self._create_remote_file()
 
-        decision = comparator._handle_remote_only("test.txt", remote_file, {}, {})
+        decision = comparator._handle_destination_only("test.txt", remote_file, {}, {})
 
         assert decision.action == SyncAction.DOWNLOAD
-        assert decision.reason == "New remote file"
+        assert decision.reason == "New destination file"
 
     def test_remote_only_local_to_cloud_deletes_remote(self):
-        """LOCAL_TO_CLOUD mode should delete remote-only files (deleted locally)."""
-        comparator = FileComparator(SyncMode.LOCAL_TO_CLOUD)
+        """SOURCE_TO_DESTINATION mode deletes destination-only files."""
+        comparator = FileComparator(SyncMode.SOURCE_TO_DESTINATION)
         remote_file = self._create_remote_file()
 
-        decision = comparator._handle_remote_only("test.txt", remote_file, {}, {})
+        decision = comparator._handle_destination_only("test.txt", remote_file, {}, {})
 
-        assert decision.action == SyncAction.DELETE_REMOTE
-        assert decision.reason == "File deleted locally"
+        assert decision.action == SyncAction.DELETE_DESTINATION
+        assert decision.reason == "File deleted at source"
 
     def test_remote_only_local_backup_skips(self):
-        """LOCAL_BACKUP mode should skip remote-only files (no download, no delete)."""
-        comparator = FileComparator(SyncMode.LOCAL_BACKUP)
+        """SOURCE_BACKUP mode skips destination-only files."""
+        comparator = FileComparator(SyncMode.SOURCE_BACKUP)
         remote_file = self._create_remote_file()
 
-        decision = comparator._handle_remote_only("test.txt", remote_file, {}, {})
+        decision = comparator._handle_destination_only("test.txt", remote_file, {}, {})
 
         assert decision.action == SyncAction.SKIP
         assert "prevents action" in decision.reason
@@ -145,9 +145,9 @@ class TestCompareExistingFiles:
         size: int = 100,
         mtime: float = 1234567890.0,
         file_id: int = 0,
-    ) -> LocalFile:
-        """Create a LocalFile for testing."""
-        return LocalFile(
+    ) -> SourceFile:
+        """Create a SourceFile for testing."""
+        return SourceFile(
             path=Path(f"/local/{relative_path}"),
             relative_path=relative_path,
             size=size,
@@ -161,15 +161,15 @@ class TestCompareExistingFiles:
         size: int = 100,
         updated_at: str = "2024-01-01T00:00:00Z",
         id: int = 123,
-    ) -> RemoteFile:
-        """Create a RemoteFile for testing."""
+    ) -> DestinationFile:
+        """Create a DestinationFile for testing."""
         mock_entry = Mock(spec=FileEntry)
         mock_entry.id = id
         mock_entry.name = relative_path.split("/")[-1]
         mock_entry.file_size = size
         mock_entry.hash = "abc123"
         mock_entry.updated_at = updated_at
-        return RemoteFile(
+        return DestinationFile(
             entry=mock_entry,
             relative_path=relative_path,
         )
@@ -241,7 +241,7 @@ class TestCompareExistingFiles:
         mock_entry.updated_at = (
             "2024-01-01T00:00:01Z"  # 1 second diff, within tolerance
         )
-        remote_file = RemoteFile(entry=mock_entry, relative_path="test.txt")
+        remote_file = DestinationFile(entry=mock_entry, relative_path="test.txt")
 
         decision = comparator._compare_existing_files(
             "test.txt", local_file, remote_file
@@ -262,7 +262,7 @@ class TestCompareExistingFiles:
         mock_entry.file_size = 100  # Different size
         mock_entry.hash = "abc123"
         mock_entry.updated_at = None  # No mtime
-        remote_file = RemoteFile(entry=mock_entry, relative_path="test.txt")
+        remote_file = DestinationFile(entry=mock_entry, relative_path="test.txt")
 
         decision = comparator._compare_existing_files(
             "test.txt", local_file, remote_file
@@ -273,7 +273,7 @@ class TestCompareExistingFiles:
 
     def test_no_remote_mtime_upload_not_allowed(self):
         """No remote mtime with upload not allowed should skip."""
-        comparator = FileComparator(SyncMode.CLOUD_BACKUP)  # No upload allowed
+        comparator = FileComparator(SyncMode.DESTINATION_BACKUP)  # No upload allowed
         local_file = self._create_local_file(size=200)
 
         # Create remote with no mtime
@@ -283,7 +283,7 @@ class TestCompareExistingFiles:
         mock_entry.file_size = 100  # Different size
         mock_entry.hash = "abc123"
         mock_entry.updated_at = None  # No mtime
-        remote_file = RemoteFile(entry=mock_entry, relative_path="test.txt")
+        remote_file = DestinationFile(entry=mock_entry, relative_path="test.txt")
 
         decision = comparator._compare_existing_files(
             "test.txt", local_file, remote_file
@@ -294,7 +294,7 @@ class TestCompareExistingFiles:
 
     def test_local_newer_upload_not_allowed_skips(self):
         """Local file newer but upload not allowed should skip."""
-        comparator = FileComparator(SyncMode.CLOUD_TO_LOCAL)  # No upload
+        comparator = FileComparator(SyncMode.DESTINATION_TO_SOURCE)  # No upload
         local_file = self._create_local_file(
             size=200,
             mtime=time.time(),  # Recent local
@@ -313,7 +313,7 @@ class TestCompareExistingFiles:
 
     def test_remote_newer_download_not_allowed_skips(self):
         """Remote file newer but download not allowed should skip."""
-        comparator = FileComparator(SyncMode.LOCAL_TO_CLOUD)  # No download
+        comparator = FileComparator(SyncMode.SOURCE_TO_DESTINATION)  # No download
         local_file = self._create_local_file(
             size=100,
             mtime=946684800.0,  # Old local
@@ -340,9 +340,9 @@ class TestCompareFilesWithPreviousState:
         size: int = 100,
         mtime: float = 1234567890.0,
         file_id: int = 1,
-    ) -> LocalFile:
-        """Create a LocalFile for testing."""
-        return LocalFile(
+    ) -> SourceFile:
+        """Create a SourceFile for testing."""
+        return SourceFile(
             path=Path(f"/local/{relative_path}"),
             relative_path=relative_path,
             size=size,
@@ -355,15 +355,15 @@ class TestCompareFilesWithPreviousState:
         relative_path: str = "test.txt",
         size: int = 100,
         id: int = 1,
-    ) -> RemoteFile:
-        """Create a RemoteFile for testing."""
+    ) -> DestinationFile:
+        """Create a DestinationFile for testing."""
         mock_entry = Mock(spec=FileEntry)
         mock_entry.id = id
         mock_entry.name = relative_path.split("/")[-1]
         mock_entry.file_size = size
         mock_entry.hash = "abc123"
         mock_entry.updated_at = "2024-01-01T00:00:00Z"
-        return RemoteFile(
+        return DestinationFile(
             entry=mock_entry,
             relative_path=relative_path,
         )
@@ -382,25 +382,25 @@ class TestCompareFilesWithPreviousState:
         decisions = comparator.compare_files(local_files, remote_files)
 
         assert len(decisions) == 1
-        assert decisions[0].action == SyncAction.DELETE_LOCAL
-        assert "deleted from cloud" in decisions[0].reason
+        assert decisions[0].action == SyncAction.DELETE_SOURCE
+        assert "deleted from destination" in decisions[0].reason
 
     def test_remote_only_was_previously_synced_deletes_remote(self):
-        """Previously synced file only in remote should be deleted."""
+        """Previously synced file only in destination should be deleted."""
         previous_synced = {"test.txt"}
         comparator = FileComparator(
             SyncMode.TWO_WAY, previous_synced_files=previous_synced
         )
         remote_file = self._create_remote_file()
 
-        local_files = {}  # Not in local anymore
+        local_files = {}  # Not in source anymore
         remote_files = {"test.txt": remote_file}
 
         decisions = comparator.compare_files(local_files, remote_files)
 
         assert len(decisions) == 1
-        assert decisions[0].action == SyncAction.DELETE_REMOTE
-        assert "deleted locally" in decisions[0].reason
+        assert decisions[0].action == SyncAction.DELETE_DESTINATION
+        assert "deleted at source" in decisions[0].reason
 
 
 class TestCompareFilesWithRenames:
@@ -412,9 +412,9 @@ class TestCompareFilesWithRenames:
         size: int = 100,
         mtime: float = 1234567890.0,
         file_id: int = 1,
-    ) -> LocalFile:
-        """Create a LocalFile for testing."""
-        return LocalFile(
+    ) -> SourceFile:
+        """Create a SourceFile for testing."""
+        return SourceFile(
             path=Path(f"/local/{relative_path}"),
             relative_path=relative_path,
             size=size,
@@ -427,15 +427,15 @@ class TestCompareFilesWithRenames:
         relative_path: str = "test.txt",
         size: int = 100,
         id: int = 1,
-    ) -> RemoteFile:
-        """Create a RemoteFile for testing."""
+    ) -> DestinationFile:
+        """Create a DestinationFile for testing."""
         mock_entry = Mock(spec=FileEntry)
         mock_entry.id = id
         mock_entry.name = relative_path.split("/")[-1]
         mock_entry.file_size = size
         mock_entry.hash = "abc123"
         mock_entry.updated_at = "2024-01-01T00:00:00Z"
-        return RemoteFile(
+        return DestinationFile(
             entry=mock_entry,
             relative_path=relative_path,
         )
@@ -443,14 +443,14 @@ class TestCompareFilesWithRenames:
     def test_local_rename_detected(self):
         """Local file renamed should be detected and trigger remote rename."""
         # Previous state: file was at "old.txt"
-        previous_local_tree = LocalTree()
+        previous_local_tree = SourceTree()
         previous_local_tree.add_item(
-            LocalItemState(file_id=1, path="old.txt", size=100, mtime=1234567890.0)
+            SourceItemState(file_id=1, path="old.txt", size=100, mtime=1234567890.0)
         )
 
         comparator = FileComparator(
             SyncMode.TWO_WAY,
-            previous_local_tree=previous_local_tree,
+            previous_source_tree=previous_local_tree,
         )
 
         # Current state: file is now at "new.txt" (same file_id)
@@ -466,7 +466,7 @@ class TestCompareFilesWithRenames:
 
         # Should detect rename and create RENAME_REMOTE decision
         rename_decisions = [
-            d for d in decisions if d.action == SyncAction.RENAME_REMOTE
+            d for d in decisions if d.action == SyncAction.RENAME_DESTINATION
         ]
         assert len(rename_decisions) == 1
         assert rename_decisions[0].old_path == "old.txt"
@@ -475,14 +475,14 @@ class TestCompareFilesWithRenames:
     def test_remote_rename_detected(self):
         """Remote file renamed should be detected and trigger local rename."""
         # Previous state: file was at "old.txt"
-        previous_remote_tree = RemoteTree()
+        previous_remote_tree = DestinationTree()
         previous_remote_tree.add_item(
-            RemoteItemState(id=1, path="old.txt", size=100, mtime=1234567890.0)
+            DestinationItemState(id=1, path="old.txt", size=100, mtime=1234567890.0)
         )
 
         comparator = FileComparator(
             SyncMode.TWO_WAY,
-            previous_remote_tree=previous_remote_tree,
+            previous_destination_tree=previous_remote_tree,
         )
 
         # Current state: file is now at "new.txt" (same id)
@@ -497,24 +497,30 @@ class TestCompareFilesWithRenames:
         decisions = comparator.compare_files(local_files, remote_files)
 
         # Should detect rename and create RENAME_LOCAL decision
-        rename_decisions = [d for d in decisions if d.action == SyncAction.RENAME_LOCAL]
+        rename_decisions = [
+            d for d in decisions if d.action == SyncAction.RENAME_SOURCE
+        ]
         assert len(rename_decisions) == 1
         assert rename_decisions[0].old_path == "old.txt"
         assert rename_decisions[0].new_path == "new.txt"
 
     def test_detect_renames_local(self):
         """Test _detect_renames for local file renames."""
-        previous_local_tree = LocalTree()
+        previous_local_tree = SourceTree()
         previous_local_tree.add_item(
-            LocalItemState(file_id=1, path="old_name.txt", size=100, mtime=1234567890.0)
+            SourceItemState(
+                file_id=1, path="old_name.txt", size=100, mtime=1234567890.0
+            )
         )
         previous_local_tree.add_item(
-            LocalItemState(file_id=2, path="unchanged.txt", size=50, mtime=1234567890.0)
+            SourceItemState(
+                file_id=2, path="unchanged.txt", size=50, mtime=1234567890.0
+            )
         )
 
         comparator = FileComparator(
             SyncMode.TWO_WAY,
-            previous_local_tree=previous_local_tree,
+            previous_source_tree=previous_local_tree,
         )
 
         # Current: file_id=1 moved to new path, file_id=2 unchanged
@@ -533,23 +539,27 @@ class TestCompareFilesWithRenames:
 
         comparator._detect_renames(local_files, remote_files)
 
-        assert 1 in comparator._local_renames
-        assert comparator._local_renames[1] == "new_name.txt"
-        assert 2 not in comparator._local_renames  # Unchanged
+        assert 1 in comparator._source_renames
+        assert comparator._source_renames[1] == "new_name.txt"
+        assert 2 not in comparator._source_renames  # Unchanged
 
     def test_detect_renames_remote(self):
         """Test _detect_renames for remote file renames."""
-        previous_remote_tree = RemoteTree()
+        previous_remote_tree = DestinationTree()
         previous_remote_tree.add_item(
-            RemoteItemState(id=100, path="old_name.txt", size=100, mtime=1234567890.0)
+            DestinationItemState(
+                id=100, path="old_name.txt", size=100, mtime=1234567890.0
+            )
         )
         previous_remote_tree.add_item(
-            RemoteItemState(id=200, path="unchanged.txt", size=50, mtime=1234567890.0)
+            DestinationItemState(
+                id=200, path="unchanged.txt", size=50, mtime=1234567890.0
+            )
         )
 
         comparator = FileComparator(
             SyncMode.TWO_WAY,
-            previous_remote_tree=previous_remote_tree,
+            previous_destination_tree=previous_remote_tree,
         )
 
         # Current: id=100 moved to new path, id=200 unchanged
@@ -568,9 +578,9 @@ class TestCompareFilesWithRenames:
 
         comparator._detect_renames(local_files, remote_files)
 
-        assert 100 in comparator._remote_renames
-        assert comparator._remote_renames[100] == "new_name.txt"
-        assert 200 not in comparator._remote_renames  # Unchanged
+        assert 100 in comparator._destination_renames
+        assert comparator._destination_renames[100] == "new_name.txt"
+        assert 200 not in comparator._destination_renames  # Unchanged
 
 
 class TestCompareSingleFile:
@@ -591,8 +601,8 @@ class TestCompareSingleFile:
         # Mark a path as handled
         comparator._handled_rename_old_paths.add("old.txt")
 
-        def _create_local_file(relative_path: str) -> LocalFile:
-            return LocalFile(
+        def _create_local_file(relative_path: str) -> SourceFile:
+            return SourceFile(
                 path=Path(f"/local/{relative_path}"),
                 relative_path=relative_path,
                 size=100,
@@ -611,41 +621,41 @@ class TestCompareSingleFile:
 class TestCloudBackupMode:
     """Tests for CLOUD_BACKUP mode (download only, no upload, no delete)."""
 
-    def _create_local_file(self, relative_path: str = "test.txt") -> LocalFile:
-        """Create a LocalFile for testing."""
-        return LocalFile(
+    def _create_local_file(self, relative_path: str = "test.txt") -> SourceFile:
+        """Create a SourceFile for testing."""
+        return SourceFile(
             path=Path(f"/local/{relative_path}"),
             relative_path=relative_path,
             size=100,
             mtime=1234567890.0,
         )
 
-    def _create_remote_file(self, relative_path: str = "test.txt") -> RemoteFile:
-        """Create a RemoteFile for testing."""
+    def _create_remote_file(self, relative_path: str = "test.txt") -> DestinationFile:
+        """Create a DestinationFile for testing."""
         mock_entry = Mock(spec=FileEntry)
         mock_entry.id = 123
         mock_entry.name = relative_path.split("/")[-1]
         mock_entry.file_size = 100
         mock_entry.hash = "abc123"
         mock_entry.updated_at = "2024-01-01T00:00:00Z"
-        return RemoteFile(entry=mock_entry, relative_path=relative_path)
+        return DestinationFile(entry=mock_entry, relative_path=relative_path)
 
     def test_cloud_backup_downloads_remote_only(self):
-        """CLOUD_BACKUP should download remote-only files."""
-        comparator = FileComparator(SyncMode.CLOUD_BACKUP)
+        """DESTINATION_BACKUP should download destination-only files."""
+        comparator = FileComparator(SyncMode.DESTINATION_BACKUP)
         remote_file = self._create_remote_file()
 
-        decision = comparator._handle_remote_only("test.txt", remote_file, {}, {})
+        decision = comparator._handle_destination_only("test.txt", remote_file, {}, {})
 
         assert decision.action == SyncAction.DOWNLOAD
-        assert decision.reason == "New remote file"
+        assert decision.reason == "New destination file"
 
     def test_cloud_backup_skips_local_only(self):
-        """CLOUD_BACKUP should skip local-only files."""
-        comparator = FileComparator(SyncMode.CLOUD_BACKUP)
+        """DESTINATION_BACKUP should skip source-only files."""
+        comparator = FileComparator(SyncMode.DESTINATION_BACKUP)
         local_file = self._create_local_file()
 
-        decision = comparator._handle_local_only("test.txt", local_file, {}, {})
+        decision = comparator._handle_source_only("test.txt", local_file, {}, {})
 
         assert decision.action == SyncAction.SKIP
 
@@ -656,16 +666,16 @@ class TestSyncDecisionDataclass:
     def test_sync_decision_creation(self):
         """Test creating a SyncDecision with all fields."""
         decision = SyncDecision(
-            action=SyncAction.RENAME_LOCAL,
+            action=SyncAction.RENAME_SOURCE,
             reason="File renamed",
-            local_file=None,
-            remote_file=None,
+            source_file=None,
+            destination_file=None,
             relative_path="new.txt",
             old_path="old.txt",
             new_path="new.txt",
         )
 
-        assert decision.action == SyncAction.RENAME_LOCAL
+        assert decision.action == SyncAction.RENAME_SOURCE
         assert decision.reason == "File renamed"
         assert decision.old_path == "old.txt"
         assert decision.new_path == "new.txt"
@@ -675,8 +685,8 @@ class TestSyncDecisionDataclass:
         decision = SyncDecision(
             action=SyncAction.UPLOAD,
             reason="Test",
-            local_file=None,
-            remote_file=None,
+            source_file=None,
+            destination_file=None,
             relative_path="test.txt",
         )
 
@@ -691,10 +701,10 @@ class TestSyncActionEnum:
         """Test all expected actions exist."""
         assert SyncAction.UPLOAD == "upload"
         assert SyncAction.DOWNLOAD == "download"
-        assert SyncAction.DELETE_LOCAL == "delete_local"
-        assert SyncAction.DELETE_REMOTE == "delete_remote"
-        assert SyncAction.RENAME_LOCAL == "rename_local"
-        assert SyncAction.RENAME_REMOTE == "rename_remote"
+        assert SyncAction.DELETE_SOURCE == "delete_source"
+        assert SyncAction.DELETE_DESTINATION == "delete_destination"
+        assert SyncAction.RENAME_SOURCE == "rename_source"
+        assert SyncAction.RENAME_DESTINATION == "rename_destination"
         assert SyncAction.SKIP == "skip"
         assert SyncAction.CONFLICT == "conflict"
 

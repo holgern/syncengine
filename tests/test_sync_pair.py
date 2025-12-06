@@ -14,13 +14,15 @@ class TestSyncPair:
     def test_create_sync_pair(self):
         """Test creating a basic sync pair."""
         pair = SyncPair(
-            local=Path("/home/user/Documents"),
-            remote="/Documents",
+            source=Path("/home/user/Documents"),
+            destination="/Documents",
             sync_mode=SyncMode.TWO_WAY,
         )
 
-        assert pair.local == Path("/home/user/Documents")
-        assert pair.remote == "Documents"  # Normalized without leading/trailing slashes
+        assert pair.source == Path("/home/user/Documents")
+        assert (
+            pair.destination == "Documents"
+        )  # Normalized without leading/trailing slashes
         assert pair.sync_mode == SyncMode.TWO_WAY
         assert pair.alias is None
         assert pair.storage_id == 0
@@ -28,18 +30,18 @@ class TestSyncPair:
     def test_sync_pair_with_options(self):
         """Test creating sync pair with all options."""
         pair = SyncPair(
-            local=Path("/home/user/Documents"),
-            remote="/Documents",
-            sync_mode=SyncMode.LOCAL_TO_CLOUD,
+            source=Path("/home/user/Documents"),
+            destination="/Documents",
+            sync_mode=SyncMode.SOURCE_TO_DESTINATION,
             alias="documents",
-            disable_local_trash=True,
+            disable_source_trash=True,
             ignore=["*.log", "*.tmp"],
             exclude_dot_files=True,
             storage_id=5,
         )
 
         assert pair.alias == "documents"
-        assert pair.disable_local_trash is True
+        assert pair.disable_source_trash is True
         assert pair.ignore == ["*.log", "*.tmp"]
         assert pair.exclude_dot_files is True
         assert pair.storage_id == 5
@@ -47,23 +49,23 @@ class TestSyncPair:
     def test_sync_pair_normalization(self):
         """Test that paths are normalized."""
         pair = SyncPair(
-            local="/home/user/Documents",  # String converted to Path
-            remote="/Documents/",  # Trailing slash removed
+            source="/home/user/Documents",  # String converted to Path
+            destination="/Documents/",  # Trailing slash removed
             sync_mode="twoWay",  # String converted to SyncMode
         )
 
-        assert isinstance(pair.local, Path)
-        assert pair.remote == "Documents"
+        assert isinstance(pair.source, Path)
+        assert pair.destination == "Documents"
         assert pair.sync_mode == SyncMode.TWO_WAY
 
     def test_from_dict(self):
         """Test creating sync pair from dictionary."""
         data = {
-            "local": "/home/user/Documents",
-            "remote": "/Documents",
+            "source": "/home/user/Documents",
+            "destination": "/Documents",
             "syncMode": "twoWay",
             "alias": "documents",
-            "disableLocalTrash": True,
+            "disableSourceTrash": True,
             "ignore": ["*.log"],
             "excludeDotFiles": True,
             "storageId": 5,
@@ -71,11 +73,11 @@ class TestSyncPair:
 
         pair = SyncPair.from_dict(data)
 
-        assert pair.local == Path("/home/user/Documents")
-        assert pair.remote == "Documents"
+        assert pair.source == Path("/home/user/Documents")
+        assert pair.destination == "Documents"
         assert pair.sync_mode == SyncMode.TWO_WAY
         assert pair.alias == "documents"
-        assert pair.disable_local_trash is True
+        assert pair.disable_source_trash is True
         assert pair.ignore == ["*.log"]
         assert pair.exclude_dot_files is True
         assert pair.storage_id == 5
@@ -83,18 +85,18 @@ class TestSyncPair:
     def test_from_dict_minimal(self):
         """Test creating sync pair from dictionary with minimal fields."""
         data = {
-            "local": "/home/user/Documents",
-            "remote": "/Documents",
+            "source": "/home/user/Documents",
+            "destination": "/Documents",
             "syncMode": "twoWay",
         }
 
         pair = SyncPair.from_dict(data)
 
-        assert pair.local == Path("/home/user/Documents")
-        assert pair.remote == "Documents"
+        assert pair.source == Path("/home/user/Documents")
+        assert pair.destination == "Documents"
         assert pair.sync_mode == SyncMode.TWO_WAY
         assert pair.alias is None
-        assert pair.disable_local_trash is False
+        assert pair.disable_source_trash is False
         assert pair.ignore == []
         assert pair.exclude_dot_files is False
         assert pair.storage_id == 0
@@ -102,8 +104,8 @@ class TestSyncPair:
     def test_from_dict_missing_required_field(self):
         """Test that missing required fields raise ValueError."""
         data = {
-            "local": "/home/user/Documents",
-            # Missing remote and syncMode
+            "source": "/home/user/Documents",
+            # Missing destination and syncMode
         }
 
         with pytest.raises(ValueError, match="Missing required fields"):
@@ -112,11 +114,11 @@ class TestSyncPair:
     def test_to_dict(self):
         """Test converting sync pair to dictionary."""
         pair = SyncPair(
-            local=Path("/home/user/Documents"),
-            remote="/Documents",
+            source=Path("/home/user/Documents"),
+            destination="/Documents",
             sync_mode=SyncMode.TWO_WAY,
             alias="documents",
-            disable_local_trash=True,
+            disable_source_trash=True,
             ignore=["*.log"],
             exclude_dot_files=True,
             storage_id=5,
@@ -125,11 +127,11 @@ class TestSyncPair:
         data = pair.to_dict()
 
         assert data == {
-            "local": "/home/user/Documents",
-            "remote": "Documents",
+            "source": "/home/user/Documents",
+            "destination": "Documents",
             "syncMode": "twoWay",
             "alias": "documents",
-            "disableLocalTrash": True,
+            "disableSourceTrash": True,
             "ignore": ["*.log"],
             "excludeDotFiles": True,
             "storageId": 5,
@@ -139,25 +141,25 @@ class TestSyncPair:
         """Test parsing simple literal sync pair."""
         pair = SyncPair.parse_literal("/home/user/docs:/Documents")
 
-        assert pair.local == Path("/home/user/docs")
-        assert pair.remote == "Documents"
+        assert pair.source == Path("/home/user/docs")
+        assert pair.destination == "Documents"
         assert pair.sync_mode == SyncMode.TWO_WAY  # Default
 
     def test_parse_literal_with_mode(self):
         """Test parsing literal sync pair with mode."""
-        pair = SyncPair.parse_literal("/home/user/docs:localToCloud:/Documents")
+        pair = SyncPair.parse_literal("/home/user/docs:sourceToDestination:/Documents")
 
-        assert pair.local == Path("/home/user/docs")
-        assert pair.remote == "Documents"
-        assert pair.sync_mode == SyncMode.LOCAL_TO_CLOUD
+        assert pair.source == Path("/home/user/docs")
+        assert pair.destination == "Documents"
+        assert pair.sync_mode == SyncMode.SOURCE_TO_DESTINATION
 
     def test_parse_literal_with_abbreviation(self):
         """Test parsing literal sync pair with abbreviated mode."""
-        pair = SyncPair.parse_literal("/home/user/docs:ltc:/Documents")
+        pair = SyncPair.parse_literal("/home/user/docs:std:/Documents")
 
-        assert pair.local == Path("/home/user/docs")
-        assert pair.remote == "Documents"
-        assert pair.sync_mode == SyncMode.LOCAL_TO_CLOUD
+        assert pair.source == Path("/home/user/docs")
+        assert pair.destination == "Documents"
+        assert pair.sync_mode == SyncMode.SOURCE_TO_DESTINATION
 
     def test_parse_literal_invalid_format(self):
         """Test that invalid literal format raises ValueError."""
@@ -178,8 +180,8 @@ class TestSyncPair:
     def test_str_representation(self):
         """Test string representation."""
         pair = SyncPair(
-            local=Path("/home/user/docs"),
-            remote="/Documents",
+            source=Path("/home/user/docs"),
+            destination="/Documents",
             sync_mode=SyncMode.TWO_WAY,
         )
 
@@ -190,8 +192,8 @@ class TestSyncPair:
     def test_str_representation_with_alias(self):
         """Test string representation with alias."""
         pair = SyncPair(
-            local=Path("/home/user/docs"),
-            remote="/Documents",
+            source=Path("/home/user/docs"),
+            destination="/Documents",
             sync_mode=SyncMode.TWO_WAY,
             alias="documents",
         )
@@ -202,15 +204,15 @@ class TestSyncPair:
     def test_repr(self):
         """Test repr representation."""
         pair = SyncPair(
-            local=Path("/home/user/docs"),
-            remote="/Documents",
+            source=Path("/home/user/docs"),
+            destination="/Documents",
             sync_mode=SyncMode.TWO_WAY,
         )
 
         result = repr(pair)
         assert "SyncPair" in result
-        assert "local=" in result
-        assert "remote=" in result
+        assert "source=" in result
+        assert "destination=" in result
         assert "sync_mode=" in result
 
 
@@ -219,235 +221,235 @@ class TestSyncPairLiteralParsing:
 
     def test_parse_literal_two_way_shorthand(self):
         """Test parsing two-way sync with shorthand notation."""
-        pair = SyncPair.parse_literal("./local:/remote")
-        assert str(pair.local) == "local"
-        assert pair.remote == "remote"
+        pair = SyncPair.parse_literal("./source:/destination")
+        assert str(pair.source) == "source"
+        assert pair.destination == "destination"
         assert pair.sync_mode == SyncMode.TWO_WAY
 
     def test_parse_literal_two_way_full_name(self):
         """Test parsing two-way sync with full mode name."""
-        pair = SyncPair.parse_literal("./local:twoWay:/remote")
-        assert str(pair.local) == "local"
-        assert pair.remote == "remote"
+        pair = SyncPair.parse_literal("./source:twoWay:/destination")
+        assert str(pair.source) == "source"
+        assert pair.destination == "destination"
         assert pair.sync_mode == SyncMode.TWO_WAY
 
     def test_parse_literal_two_way_abbreviation(self):
         """Test parsing two-way sync with abbreviation."""
-        pair = SyncPair.parse_literal("./local:tw:/remote")
-        assert str(pair.local) == "local"
-        assert pair.remote == "remote"
+        pair = SyncPair.parse_literal("./source:tw:/destination")
+        assert str(pair.source) == "source"
+        assert pair.destination == "destination"
         assert pair.sync_mode == SyncMode.TWO_WAY
 
-    def test_parse_literal_local_to_cloud_full_name(self):
-        """Test parsing local-to-cloud sync with full mode name."""
-        pair = SyncPair.parse_literal("./local:localToCloud:/remote")
-        assert str(pair.local) == "local"
-        assert pair.remote == "remote"
-        assert pair.sync_mode == SyncMode.LOCAL_TO_CLOUD
+    def test_parse_literal_source_to_destination_full_name(self):
+        """Test parsing source-to-destination sync with full mode name."""
+        pair = SyncPair.parse_literal("./source:sourceToDestination:/destination")
+        assert str(pair.source) == "source"
+        assert pair.destination == "destination"
+        assert pair.sync_mode == SyncMode.SOURCE_TO_DESTINATION
 
-    def test_parse_literal_local_to_cloud_abbreviation(self):
-        """Test parsing local-to-cloud sync with abbreviation."""
-        pair = SyncPair.parse_literal("./local:ltc:/remote")
-        assert str(pair.local) == "local"
-        assert pair.remote == "remote"
-        assert pair.sync_mode == SyncMode.LOCAL_TO_CLOUD
+    def test_parse_literal_source_to_destination_abbreviation(self):
+        """Test parsing source-to-destination sync with abbreviation."""
+        pair = SyncPair.parse_literal("./source:std:/destination")
+        assert str(pair.source) == "source"
+        assert pair.destination == "destination"
+        assert pair.sync_mode == SyncMode.SOURCE_TO_DESTINATION
 
-    def test_parse_literal_local_backup_full_name(self):
-        """Test parsing local backup sync with full mode name."""
-        pair = SyncPair.parse_literal("./local:localBackup:/remote")
-        assert str(pair.local) == "local"
-        assert pair.remote == "remote"
-        assert pair.sync_mode == SyncMode.LOCAL_BACKUP
+    def test_parse_literal_source_backup_full_name(self):
+        """Test parsing source backup sync with full mode name."""
+        pair = SyncPair.parse_literal("./source:sourceBackup:/destination")
+        assert str(pair.source) == "source"
+        assert pair.destination == "destination"
+        assert pair.sync_mode == SyncMode.SOURCE_BACKUP
 
-    def test_parse_literal_local_backup_abbreviation(self):
-        """Test parsing local backup sync with abbreviation."""
-        pair = SyncPair.parse_literal("./local:lb:/remote")
-        assert str(pair.local) == "local"
-        assert pair.remote == "remote"
-        assert pair.sync_mode == SyncMode.LOCAL_BACKUP
+    def test_parse_literal_source_backup_abbreviation(self):
+        """Test parsing source backup sync with abbreviation."""
+        pair = SyncPair.parse_literal("./source:sb:/destination")
+        assert str(pair.source) == "source"
+        assert pair.destination == "destination"
+        assert pair.sync_mode == SyncMode.SOURCE_BACKUP
 
-    def test_parse_literal_cloud_to_local_full_name(self):
-        """Test parsing cloud-to-local sync with full mode name."""
-        pair = SyncPair.parse_literal("./local:cloudToLocal:/remote")
-        assert str(pair.local) == "local"
-        assert pair.remote == "remote"
-        assert pair.sync_mode == SyncMode.CLOUD_TO_LOCAL
+    def test_parse_literal_destination_to_source_full_name(self):
+        """Test parsing destination-to-source sync with full mode name."""
+        pair = SyncPair.parse_literal("./source:destinationToSource:/destination")
+        assert str(pair.source) == "source"
+        assert pair.destination == "destination"
+        assert pair.sync_mode == SyncMode.DESTINATION_TO_SOURCE
 
-    def test_parse_literal_cloud_to_local_abbreviation(self):
-        """Test parsing cloud-to-local sync with abbreviation."""
-        pair = SyncPair.parse_literal("./local:ctl:/remote")
-        assert str(pair.local) == "local"
-        assert pair.remote == "remote"
-        assert pair.sync_mode == SyncMode.CLOUD_TO_LOCAL
+    def test_parse_literal_destination_to_source_abbreviation(self):
+        """Test parsing destination-to-source sync with abbreviation."""
+        pair = SyncPair.parse_literal("./source:dts:/destination")
+        assert str(pair.source) == "source"
+        assert pair.destination == "destination"
+        assert pair.sync_mode == SyncMode.DESTINATION_TO_SOURCE
 
-    def test_parse_literal_cloud_backup_full_name(self):
-        """Test parsing cloud backup sync with full mode name."""
-        pair = SyncPair.parse_literal("./local:cloudBackup:/remote")
-        assert str(pair.local) == "local"
-        assert pair.remote == "remote"
-        assert pair.sync_mode == SyncMode.CLOUD_BACKUP
+    def test_parse_literal_destination_backup_full_name(self):
+        """Test parsing destination backup sync with full mode name."""
+        pair = SyncPair.parse_literal("./source:destinationBackup:/destination")
+        assert str(pair.source) == "source"
+        assert pair.destination == "destination"
+        assert pair.sync_mode == SyncMode.DESTINATION_BACKUP
 
-    def test_parse_literal_cloud_backup_abbreviation(self):
-        """Test parsing cloud backup sync with abbreviation."""
-        pair = SyncPair.parse_literal("./local:cb:/remote")
-        assert str(pair.local) == "local"
-        assert pair.remote == "remote"
-        assert pair.sync_mode == SyncMode.CLOUD_BACKUP
+    def test_parse_literal_destination_backup_abbreviation(self):
+        """Test parsing destination backup sync with abbreviation."""
+        pair = SyncPair.parse_literal("./source:db:/destination")
+        assert str(pair.source) == "source"
+        assert pair.destination == "destination"
+        assert pair.sync_mode == SyncMode.DESTINATION_BACKUP
 
 
-class TestSyncPairRootRemote:
-    """Tests for syncing to cloud root with remote='/'.
+class TestSyncPairRootDestination:
+    """Tests for syncing to destination root with destination='/'.
 
-    When remote is set to '/' (root), files should sync directly to the cloud root
-    without creating a wrapper folder. For example:
-    - local/subdir/file.txt -> /subdir/file.txt (NOT /local/subdir/file.txt)
+    When destination is set to '/' (root), files should sync directly to
+    the destination root without creating a wrapper folder. For example:
+    - source/subdir/file.txt -> /subdir/file.txt (NOT /source/subdir/file.txt)
 
     This is important for cross-platform compatibility, especially on Windows
     where path handling differs.
     """
 
-    def test_remote_slash_normalized_to_empty_string(self):
-        """Test that remote='/' is normalized to empty string."""
+    def test_destination_slash_normalized_to_empty_string(self):
+        """Test that destination='/' is normalized to empty string."""
         pair = SyncPair(
-            local=Path("/home/user/my_folder"),
-            remote="/",
-            sync_mode=SyncMode.LOCAL_TO_CLOUD,
+            source=Path("/home/user/my_folder"),
+            destination="/",
+            sync_mode=SyncMode.SOURCE_TO_DESTINATION,
         )
 
         # "/" should be normalized to "" (empty string means root)
-        assert pair.remote == ""
+        assert pair.destination == ""
 
-    def test_remote_slash_from_dict(self):
-        """Test that remote='/' from dict config is normalized correctly."""
+    def test_destination_slash_from_dict(self):
+        """Test that destination='/' from dict config is normalized correctly."""
         data = {
-            "local": "/home/user/my_folder",
-            "remote": "/",
-            "syncMode": "localToCloud",
+            "source": "/home/user/my_folder",
+            "destination": "/",
+            "syncMode": "sourceToDestination",
         }
 
         pair = SyncPair.from_dict(data)
 
-        assert pair.remote == ""
+        assert pair.destination == ""
 
-    def test_remote_empty_string_stays_empty(self):
-        """Test that remote='' stays as empty string."""
+    def test_destination_empty_string_stays_empty(self):
+        """Test that destination='' stays as empty string."""
         pair = SyncPair(
-            local=Path("/home/user/my_folder"),
-            remote="",
-            sync_mode=SyncMode.LOCAL_TO_CLOUD,
+            source=Path("/home/user/my_folder"),
+            destination="",
+            sync_mode=SyncMode.SOURCE_TO_DESTINATION,
         )
 
-        assert pair.remote == ""
+        assert pair.destination == ""
 
-    def test_remote_slash_with_windows_style_local_path(self):
-        """Test remote='/' with Windows-style local path (forward slashes).
+    def test_destination_slash_with_windows_style_source_path(self):
+        """Test destination='/' with Windows-style source path (forward slashes).
 
         On Windows, paths like C:/Users/test/sync should work correctly
-        with remote='/'.
+        with destination='/'.
         """
         # Using forward slashes which work on all platforms
         pair = SyncPair(
-            local=Path("C:/Users/test/sync"),
-            remote="/",
-            sync_mode=SyncMode.LOCAL_TO_CLOUD,
+            source=Path("C:/Users/test/sync"),
+            destination="/",
+            sync_mode=SyncMode.SOURCE_TO_DESTINATION,
         )
 
-        assert pair.remote == ""
-        # local.name should give the folder name
-        assert pair.local.name == "sync"
+        assert pair.destination == ""
+        # source.name should give the folder name
+        assert pair.source.name == "sync"
 
-    def test_remote_slash_to_dict_preserves_empty(self):
-        """Test that to_dict preserves empty remote (root)."""
+    def test_destination_slash_to_dict_preserves_empty(self):
+        """Test that to_dict preserves empty destination (root)."""
         pair = SyncPair(
-            local=Path("/home/user/my_folder"),
-            remote="/",
-            sync_mode=SyncMode.LOCAL_TO_CLOUD,
+            source=Path("/home/user/my_folder"),
+            destination="/",
+            sync_mode=SyncMode.SOURCE_TO_DESTINATION,
         )
 
         data = pair.to_dict()
 
         # Empty string in dict represents root
-        assert data["remote"] == ""
+        assert data["destination"] == ""
 
-    def test_remote_slash_parse_literal(self):
-        """Test parsing literal with remote='/'."""
+    def test_destination_slash_parse_literal(self):
+        """Test parsing literal with destination='/'."""
         pair = SyncPair.parse_literal("/home/user/docs:/")
 
-        assert pair.local == Path("/home/user/docs")
-        assert pair.remote == ""  # Normalized to empty
+        assert pair.source == Path("/home/user/docs")
+        assert pair.destination == ""  # Normalized to empty
         assert pair.sync_mode == SyncMode.TWO_WAY
 
-    def test_remote_slash_parse_literal_with_mode(self):
-        """Test parsing literal with mode and remote='/'."""
-        pair = SyncPair.parse_literal("/home/user/docs:ltc:/")
+    def test_destination_slash_parse_literal_with_mode(self):
+        """Test parsing literal with mode and destination='/'."""
+        pair = SyncPair.parse_literal("/home/user/docs:std:/")
 
-        assert pair.local == Path("/home/user/docs")
-        assert pair.remote == ""  # Normalized to empty
-        assert pair.sync_mode == SyncMode.LOCAL_TO_CLOUD
+        assert pair.source == Path("/home/user/docs")
+        assert pair.destination == ""  # Normalized to empty
+        assert pair.sync_mode == SyncMode.SOURCE_TO_DESTINATION
 
     def test_syncing_to_root_detection(self):
-        """Test that syncing_to_root can be detected from empty remote."""
+        """Test that syncing_to_root can be detected from empty destination."""
         pair = SyncPair(
-            local=Path("/home/user/my_folder"),
-            remote="/",
-            sync_mode=SyncMode.LOCAL_TO_CLOUD,
+            source=Path("/home/user/my_folder"),
+            destination="/",
+            sync_mode=SyncMode.SOURCE_TO_DESTINATION,
         )
 
         # This is how the engine detects root syncing
-        syncing_to_root = not pair.remote or pair.remote == "/"
+        syncing_to_root = not pair.destination or pair.destination == "/"
         assert syncing_to_root is True
 
-    def test_non_root_remote_not_detected_as_root(self):
-        """Test that non-root remote paths are not detected as root."""
+    def test_non_root_destination_not_detected_as_root(self):
+        """Test that non-root destination paths are not detected as root."""
         pair = SyncPair(
-            local=Path("/home/user/my_folder"),
-            remote="/some/folder",
-            sync_mode=SyncMode.LOCAL_TO_CLOUD,
+            source=Path("/home/user/my_folder"),
+            destination="/some/folder",
+            sync_mode=SyncMode.SOURCE_TO_DESTINATION,
         )
 
-        # After normalization, remote should be "some/folder"
-        assert pair.remote == "some/folder"
+        # After normalization, destination should be "some/folder"
+        assert pair.destination == "some/folder"
 
         # This should NOT be detected as root
-        syncing_to_root = not pair.remote or pair.remote == "/"
+        syncing_to_root = not pair.destination or pair.destination == "/"
         assert syncing_to_root is False
 
-    def test_remote_path_construction_for_root(self):
+    def test_destination_path_construction_for_root(self):
         """Test that file paths are constructed correctly when syncing to root.
 
-        When remote is '/' (empty after normalization), the full remote path
+        When destination is '/' (empty after normalization), the full destination path
         should be just the relative path without any prefix.
         """
         pair = SyncPair(
-            local=Path("/home/user/my_folder"),
-            remote="/",
-            sync_mode=SyncMode.LOCAL_TO_CLOUD,
+            source=Path("/home/user/my_folder"),
+            destination="/",
+            sync_mode=SyncMode.SOURCE_TO_DESTINATION,
         )
 
         # Simulate how engine constructs paths
         relative_path = "subdir/file.txt"
-        if pair.remote:
-            full_remote_path = f"{pair.remote}/{relative_path}"
+        if pair.destination:
+            full_destination_path = f"{pair.destination}/{relative_path}"
         else:
-            full_remote_path = relative_path
+            full_destination_path = relative_path
 
         # Should be just the relative path, NOT "my_folder/subdir/file.txt"
-        assert full_remote_path == "subdir/file.txt"
+        assert full_destination_path == "subdir/file.txt"
 
-    def test_remote_path_construction_for_named_folder(self):
-        """Test that file paths are constructed correctly for named remote folder."""
+    def test_destination_path_construction_for_named_folder(self):
+        """Test file paths are constructed correctly for named destination."""
         pair = SyncPair(
-            local=Path("/home/user/my_folder"),
-            remote="/backup",
-            sync_mode=SyncMode.LOCAL_TO_CLOUD,
+            source=Path("/home/user/my_folder"),
+            destination="/backup",
+            sync_mode=SyncMode.SOURCE_TO_DESTINATION,
         )
 
         # Simulate how engine constructs paths
         relative_path = "subdir/file.txt"
-        if pair.remote:
-            full_remote_path = f"{pair.remote}/{relative_path}"
+        if pair.destination:
+            full_destination_path = f"{pair.destination}/{relative_path}"
         else:
-            full_remote_path = relative_path
+            full_destination_path = relative_path
 
-        # Should include the remote folder prefix
-        assert full_remote_path == "backup/subdir/file.txt"
+        # Should include the destination folder prefix
+        assert full_destination_path == "backup/subdir/file.txt"

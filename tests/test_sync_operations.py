@@ -12,10 +12,10 @@ from syncengine.operations import (
     move_to_local_trash,
     rename_local_file,
 )
+from syncengine.scanner import DestinationFile, SourceFile
 
 # Alias for backward compatibility in tests
 LOCAL_TRASH_DIR_NAME = DEFAULT_LOCAL_TRASH_DIR_NAME
-from syncengine.scanner import LocalFile, RemoteFile
 
 
 class TestGetLocalTrashPath:
@@ -184,7 +184,7 @@ class TestSyncOperationsUploadFile:
 
         test_file = tmp_path / "test.txt"
         test_file.write_text("test")
-        local_file = LocalFile(
+        local_file = SourceFile(
             path=test_file,
             relative_path="test.txt",
             size=4,
@@ -193,7 +193,7 @@ class TestSyncOperationsUploadFile:
 
         progress_cb = MagicMock()
         ops.upload_file(
-            local_file=local_file,
+            source_file=local_file,
             remote_path="remote/test.txt",
             storage_id=5,
             chunk_size=1024,
@@ -222,13 +222,13 @@ class TestSyncOperationsDownloadFile:
 
         mock_entry = MagicMock()
         mock_entry.hash = "abc123"
-        remote_file = RemoteFile(entry=mock_entry, relative_path="remote/file.txt")
+        remote_file = DestinationFile(entry=mock_entry, relative_path="remote/file.txt")
 
         local_path = tmp_path / "subdir" / "downloaded.txt"
         progress_cb = MagicMock()
 
         ops.download_file(
-            remote_file=remote_file,
+            destination_file=remote_file,
             local_path=local_path,
             progress_callback=progress_cb,
         )
@@ -253,9 +253,9 @@ class TestSyncOperationsDeleteRemote:
 
         mock_entry = MagicMock()
         mock_entry.id = 12345
-        remote_file = RemoteFile(entry=mock_entry, relative_path="file.txt")
+        remote_file = DestinationFile(entry=mock_entry, relative_path="file.txt")
 
-        ops.delete_remote(remote_file, permanent=False)
+        ops.delete_remote(destination_file=remote_file, permanent=False)
 
         mock_client.delete_file_entries.assert_called_once_with(
             entry_ids=[12345],
@@ -269,9 +269,9 @@ class TestSyncOperationsDeleteRemote:
 
         mock_entry = MagicMock()
         mock_entry.id = 12345
-        remote_file = RemoteFile(entry=mock_entry, relative_path="file.txt")
+        remote_file = DestinationFile(entry=mock_entry, relative_path="file.txt")
 
-        ops.delete_remote(remote_file, permanent=True)
+        ops.delete_remote(destination_file=remote_file, permanent=True)
 
         mock_client.delete_file_entries.assert_called_once_with(
             entry_ids=[12345],
@@ -289,14 +289,14 @@ class TestSyncOperationsDeleteLocal:
 
         test_file = tmp_path / "to_delete.txt"
         test_file.write_text("content")
-        local_file = LocalFile(
+        local_file = SourceFile(
             path=test_file,
             relative_path="to_delete.txt",
             size=7,
             mtime=1000.0,
         )
 
-        ops.delete_local(local_file, use_trash=True, sync_root=tmp_path)
+        ops.delete_local(source_file=local_file, use_trash=True, sync_root=tmp_path)
 
         assert not test_file.exists()
         # File should be in trash
@@ -310,14 +310,14 @@ class TestSyncOperationsDeleteLocal:
 
         test_file = tmp_path / "to_delete.txt"
         test_file.write_text("content")
-        local_file = LocalFile(
+        local_file = SourceFile(
             path=test_file,
             relative_path="to_delete.txt",
             size=7,
             mtime=1000.0,
         )
 
-        ops.delete_local(local_file, use_trash=False)
+        ops.delete_local(source_file=local_file, use_trash=False)
 
         assert not test_file.exists()
         # No trash directory should be created
@@ -335,7 +335,7 @@ class TestSyncOperationsRenameLocal:
 
         test_file = tmp_path / "old_name.txt"
         test_file.write_text("content")
-        local_file = LocalFile(
+        local_file = SourceFile(
             path=test_file,
             relative_path="old_name.txt",
             size=7,
@@ -343,7 +343,7 @@ class TestSyncOperationsRenameLocal:
         )
 
         result = ops.rename_local(
-            local_file=local_file,
+            source_file=local_file,
             new_relative_path="new_name.txt",
             sync_root=tmp_path,
         )
@@ -360,7 +360,7 @@ class TestSyncOperationsRenameLocal:
 
         test_file = tmp_path / "file.txt"
         test_file.write_text("content")
-        local_file = LocalFile(
+        local_file = SourceFile(
             path=test_file,
             relative_path="file.txt",
             size=7,
@@ -368,7 +368,7 @@ class TestSyncOperationsRenameLocal:
         )
 
         result = ops.rename_local(
-            local_file=local_file,
+            source_file=local_file,
             new_relative_path="subdir/file.txt",
             sync_root=tmp_path,
         )
@@ -388,9 +388,9 @@ class TestSyncOperationsRenameRemote:
 
         mock_entry = MagicMock()
         mock_entry.id = 12345
-        remote_file = RemoteFile(entry=mock_entry, relative_path="old_name.txt")
+        remote_file = DestinationFile(entry=mock_entry, relative_path="old_name.txt")
 
-        ops.rename_remote(remote_file, new_name="new_name.txt")
+        ops.rename_remote(destination_file=remote_file, new_name="new_name.txt")
 
         # Only update should be called, not move
         mock_client.move_file_entries.assert_not_called()
@@ -406,10 +406,10 @@ class TestSyncOperationsRenameRemote:
 
         mock_entry = MagicMock()
         mock_entry.id = 12345
-        remote_file = RemoteFile(entry=mock_entry, relative_path="folder/file.txt")
+        remote_file = DestinationFile(entry=mock_entry, relative_path="folder/file.txt")
 
         ops.rename_remote(
-            remote_file,
+            destination_file=remote_file,
             new_name="file.txt",
             new_parent_id=67890,
         )
@@ -431,10 +431,10 @@ class TestSyncOperationsRenameRemote:
 
         mock_entry = MagicMock()
         mock_entry.id = 12345
-        remote_file = RemoteFile(entry=mock_entry, relative_path="folder/old.txt")
+        remote_file = DestinationFile(entry=mock_entry, relative_path="folder/old.txt")
 
         ops.rename_remote(
-            remote_file,
+            destination_file=remote_file,
             new_name="new.txt",
             new_parent_id=99999,
         )

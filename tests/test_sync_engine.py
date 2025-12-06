@@ -10,15 +10,15 @@ import pytest
 from syncengine.comparator import SyncAction, SyncDecision
 from syncengine.concurrency import ConcurrencyLimits, SyncPauseController
 from syncengine.engine import SyncEngine
-from syncengine.modes import SyncMode
 from syncengine.models import FileEntry
+from syncengine.modes import SyncMode
 from syncengine.pair import SyncPair
 from syncengine.protocols import (
-    CloudClientProtocol,
     FileEntriesManagerProtocol,
     OutputHandlerProtocol,
+    StorageClientProtocol,
 )
-from syncengine.scanner import LocalFile, RemoteFile
+from syncengine.scanner import DestinationFile, SourceFile
 from syncengine.state import SyncStateManager
 
 
@@ -49,7 +49,7 @@ class TestSyncEngine:
     @pytest.fixture
     def mock_client(self):
         """Create a mock cloud client."""
-        client = Mock(spec=CloudClientProtocol)
+        client = Mock(spec=StorageClientProtocol)
         return client
 
     @pytest.fixture
@@ -84,8 +84,8 @@ class TestSyncEngine:
     def test_sync_pair_invalid_local_path(self, sync_engine, temp_dir):
         """Test sync_pair with non-existent local path."""
         pair = SyncPair(
-            local=temp_dir / "nonexistent",
-            remote="/remote",
+            source=temp_dir / "nonexistent",
+            destination="/remote",
             sync_mode=SyncMode.TWO_WAY,
         )
 
@@ -99,8 +99,8 @@ class TestSyncEngine:
         test_file.write_text("test")
 
         pair = SyncPair(
-            local=test_file,
-            remote="/remote",
+            source=test_file,
+            destination="/remote",
             sync_mode=SyncMode.TWO_WAY,
         )
 
@@ -110,8 +110,8 @@ class TestSyncEngine:
     def test_sync_pair_dry_run_empty_dirs(self, sync_engine, temp_dir):
         """Test dry run with empty local and remote directories."""
         pair = SyncPair(
-            local=temp_dir,
-            remote="/remote",
+            source=temp_dir,
+            destination="/remote",
             sync_mode=SyncMode.TWO_WAY,
         )
 
@@ -134,9 +134,9 @@ class TestSyncEngine:
         (temp_dir / "file2.txt").write_text("content2")
 
         pair = SyncPair(
-            local=temp_dir,
-            remote="/remote",
-            sync_mode=SyncMode.LOCAL_TO_CLOUD,
+            source=temp_dir,
+            destination="/remote",
+            sync_mode=SyncMode.SOURCE_TO_DESTINATION,
         )
 
         # Factory already returns mock manager with empty remote
@@ -150,9 +150,9 @@ class TestSyncEngine:
     ):
         """Test CLOUD_TO_LOCAL mode with remote files."""
         pair = SyncPair(
-            local=temp_dir,
-            remote="/remote",
-            sync_mode=SyncMode.CLOUD_TO_LOCAL,
+            source=temp_dir,
+            destination="/remote",
+            sync_mode=SyncMode.DESTINATION_TO_SOURCE,
         )
 
         # Create mock remote files
@@ -195,8 +195,8 @@ class TestSyncEngine:
         local_file.write_text("local content")
 
         pair = SyncPair(
-            local=temp_dir,
-            remote="/remote",
+            source=temp_dir,
+            destination="/remote",
             sync_mode=SyncMode.TWO_WAY,
         )
 
@@ -232,9 +232,9 @@ class TestSyncEngine:
         (temp_dir / ".hidden").write_text("hidden")
 
         pair = SyncPair(
-            local=temp_dir,
-            remote="/remote",
-            sync_mode=SyncMode.LOCAL_TO_CLOUD,
+            source=temp_dir,
+            destination="/remote",
+            sync_mode=SyncMode.SOURCE_TO_DESTINATION,
             ignore=["*.log"],
             exclude_dot_files=True,
         )
@@ -250,8 +250,8 @@ class TestSyncEngine:
     ):
         """Test _scan_remote with non-existent remote folder."""
         pair = SyncPair(
-            local=Path("/tmp"),
-            remote="/nonexistent",
+            source=Path("/tmp"),
+            destination="/nonexistent",
             sync_mode=SyncMode.TWO_WAY,
             storage_id=0,
         )
@@ -269,29 +269,29 @@ class TestSyncEngine:
             SyncDecision(
                 action=SyncAction.UPLOAD,
                 reason="New local file",
-                local_file=None,
-                remote_file=None,
+                source_file=None,
+                destination_file=None,
                 relative_path="file1.txt",
             ),
             SyncDecision(
                 action=SyncAction.DOWNLOAD,
                 reason="New remote file",
-                local_file=None,
-                remote_file=None,
+                source_file=None,
+                destination_file=None,
                 relative_path="file2.txt",
             ),
             SyncDecision(
                 action=SyncAction.SKIP,
                 reason="Files match",
-                local_file=None,
-                remote_file=None,
+                source_file=None,
+                destination_file=None,
                 relative_path="file3.txt",
             ),
             SyncDecision(
                 action=SyncAction.CONFLICT,
                 reason="Modified on both sides",
-                local_file=None,
-                remote_file=None,
+                source_file=None,
+                destination_file=None,
                 relative_path="file4.txt",
             ),
         ]
@@ -313,8 +313,8 @@ class TestSyncEngine:
             SyncDecision(
                 action=SyncAction.CONFLICT,
                 reason="Modified on both sides",
-                local_file=None,
-                remote_file=None,
+                source_file=None,
+                destination_file=None,
                 relative_path="conflict.txt",
             ),
         ]
@@ -339,7 +339,7 @@ class TestSyncEngineIntegration:
     @pytest.fixture
     def mock_client_with_ops(self):
         """Create a mock client with upload/download operations."""
-        client = Mock(spec=CloudClientProtocol)
+        client = Mock(spec=StorageClientProtocol)
 
         # Mock upload
         def mock_upload(file_path, relative_path, **kwargs):
@@ -381,9 +381,9 @@ class TestSyncEngineIntegration:
         engine = SyncEngine(mock_client_with_ops, mock_entries_manager_factory, output)
 
         pair = SyncPair(
-            local=local_dir,
-            remote="/remote",
-            sync_mode=SyncMode.LOCAL_TO_CLOUD,
+            source=local_dir,
+            destination="/remote",
+            sync_mode=SyncMode.SOURCE_TO_DESTINATION,
         )
 
         # Run sync (not dry run)
@@ -466,15 +466,15 @@ class TestLocalTrashOperations:
         """Test SyncOperations.delete_local with trash enabled."""
         from syncengine.constants import DEFAULT_LOCAL_TRASH_DIR_NAME
         from syncengine.operations import SyncOperations
-        from syncengine.scanner import LocalFile
+        from syncengine.scanner import SourceFile
 
         # Create a test file
         test_file = temp_dir / "to_delete.txt"
         test_file.write_text("delete me")
-        local_file = LocalFile.from_path(test_file, temp_dir)
+        local_file = SourceFile.from_path(test_file, temp_dir)
 
         # Create mock client
-        mock_client = Mock(spec=CloudClientProtocol)
+        mock_client = Mock(spec=StorageClientProtocol)
         ops = SyncOperations(mock_client)
 
         # Delete with trash enabled
@@ -496,15 +496,15 @@ class TestLocalTrashOperations:
         """Test SyncOperations.delete_local with trash disabled."""
         from syncengine.constants import DEFAULT_LOCAL_TRASH_DIR_NAME
         from syncengine.operations import SyncOperations
-        from syncengine.scanner import LocalFile
+        from syncengine.scanner import SourceFile
 
         # Create a test file
         test_file = temp_dir / "to_delete.txt"
         test_file.write_text("delete me")
-        local_file = LocalFile.from_path(test_file, temp_dir)
+        local_file = SourceFile.from_path(test_file, temp_dir)
 
         # Create mock client
-        mock_client = Mock(spec=CloudClientProtocol)
+        mock_client = Mock(spec=StorageClientProtocol)
         ops = SyncOperations(mock_client)
 
         # Delete with trash disabled
@@ -521,15 +521,15 @@ class TestLocalTrashOperations:
         """Test SyncOperations.delete_local without sync_root falls back to delete."""
         from syncengine.constants import DEFAULT_LOCAL_TRASH_DIR_NAME
         from syncengine.operations import SyncOperations
-        from syncengine.scanner import LocalFile
+        from syncengine.scanner import SourceFile
 
         # Create a test file
         test_file = temp_dir / "to_delete.txt"
         test_file.write_text("delete me")
-        local_file = LocalFile.from_path(test_file, temp_dir)
+        local_file = SourceFile.from_path(test_file, temp_dir)
 
         # Create mock client
-        mock_client = Mock(spec=CloudClientProtocol)
+        mock_client = Mock(spec=StorageClientProtocol)
         ops = SyncOperations(mock_client)
 
         # Delete with trash enabled but no sync_root
@@ -542,23 +542,23 @@ class TestLocalTrashOperations:
         trash_dir = temp_dir / DEFAULT_LOCAL_TRASH_DIR_NAME
         assert not trash_dir.exists()
 
-    def test_sync_pair_disable_local_trash(self, temp_dir: Path):
-        """Test SyncPair.disable_local_trash setting."""
+    def test_sync_pair_disable_source_trash(self, temp_dir: Path):
+        """Test SyncPair.disable_source_trash setting."""
         pair_with_trash = SyncPair(
-            local=temp_dir,
-            remote="/remote",
+            source=temp_dir,
+            destination="/remote",
             sync_mode=SyncMode.TWO_WAY,
-            disable_local_trash=False,
+            disable_source_trash=False,
         )
-        assert pair_with_trash.use_local_trash is True
+        assert pair_with_trash.use_source_trash is True
 
         pair_without_trash = SyncPair(
-            local=temp_dir,
-            remote="/remote",
+            source=temp_dir,
+            destination="/remote",
             sync_mode=SyncMode.TWO_WAY,
-            disable_local_trash=True,
+            disable_source_trash=True,
         )
-        assert pair_without_trash.use_local_trash is False
+        assert pair_without_trash.use_source_trash is False
 
 
 class TestSyncEnginePauseResumeCancel:
@@ -567,7 +567,7 @@ class TestSyncEnginePauseResumeCancel:
     @pytest.fixture
     def mock_client(self):
         """Create a mock cloud client."""
-        return Mock(spec=CloudClientProtocol)
+        return Mock(spec=StorageClientProtocol)
 
     @pytest.fixture
     def mock_output(self):
@@ -707,7 +707,7 @@ class TestSyncEngineWithCustomDependencies:
     @pytest.fixture
     def mock_client(self):
         """Create a mock cloud client."""
-        return Mock(spec=CloudClientProtocol)
+        return Mock(spec=StorageClientProtocol)
 
     def test_init_with_custom_state_manager(
         self, mock_client, mock_entries_manager_factory
@@ -765,7 +765,7 @@ class TestSyncEngineHelperMethods:
     @pytest.fixture
     def mock_client(self):
         """Create a mock cloud client."""
-        return Mock(spec=CloudClientProtocol)
+        return Mock(spec=StorageClientProtocol)
 
     @pytest.fixture
     def mock_output_quiet(self):
@@ -801,33 +801,33 @@ class TestSyncEngineHelperMethods:
         """Test _categorize_decisions handles rename actions."""
         decisions = [
             SyncDecision(
-                action=SyncAction.RENAME_LOCAL,
+                action=SyncAction.RENAME_SOURCE,
                 reason="Renamed in remote",
-                local_file=None,
-                remote_file=None,
+                source_file=None,
+                destination_file=None,
                 relative_path="old.txt",
                 new_path="new.txt",
             ),
             SyncDecision(
-                action=SyncAction.RENAME_REMOTE,
+                action=SyncAction.RENAME_DESTINATION,
                 reason="Renamed in local",
-                local_file=None,
-                remote_file=None,
+                source_file=None,
+                destination_file=None,
                 relative_path="old2.txt",
                 new_path="new2.txt",
             ),
             SyncDecision(
-                action=SyncAction.DELETE_LOCAL,
+                action=SyncAction.DELETE_SOURCE,
                 reason="Deleted in remote",
-                local_file=None,
-                remote_file=None,
+                source_file=None,
+                destination_file=None,
                 relative_path="deleted_local.txt",
             ),
             SyncDecision(
-                action=SyncAction.DELETE_REMOTE,
+                action=SyncAction.DELETE_DESTINATION,
                 reason="Deleted in local",
-                local_file=None,
-                remote_file=None,
+                source_file=None,
+                destination_file=None,
                 relative_path="deleted_remote.txt",
             ),
         ]
@@ -868,8 +868,8 @@ class TestSyncEngineHelperMethods:
             SyncDecision(
                 action=SyncAction.CONFLICT,
                 reason="Modified both sides",
-                local_file=None,
-                remote_file=None,
+                source_file=None,
+                destination_file=None,
                 relative_path="conflict.txt",
             ),
         ]
@@ -960,7 +960,7 @@ class TestSyncEngineExecuteDecision:
     @pytest.fixture
     def mock_client(self):
         """Create a mock cloud client."""
-        client = Mock(spec=CloudClientProtocol)
+        client = Mock(spec=StorageClientProtocol)
         return client
 
     @pytest.fixture
@@ -990,13 +990,13 @@ class TestSyncEngineExecuteDecision:
         decision = SyncDecision(
             action=SyncAction.UPLOAD,
             reason="Test",
-            local_file=None,
-            remote_file=None,
+            source_file=None,
+            destination_file=None,
             relative_path="test.txt",
         )
         pair = SyncPair(
-            local=temp_dir,
-            remote="/remote",
+            source=temp_dir,
+            destination="/remote",
             sync_mode=SyncMode.TWO_WAY,
         )
 
@@ -1005,7 +1005,7 @@ class TestSyncEngineExecuteDecision:
 
     def test_execute_upload_file_not_exists(self, sync_engine, temp_dir):
         """Test _execute_upload skips if file doesn't exist."""
-        local_file = LocalFile(
+        local_file = SourceFile(
             path=temp_dir / "nonexistent.txt",
             relative_path="nonexistent.txt",
             size=100,
@@ -1014,13 +1014,13 @@ class TestSyncEngineExecuteDecision:
         decision = SyncDecision(
             action=SyncAction.UPLOAD,
             reason="New local file",
-            local_file=local_file,
-            remote_file=None,
+            source_file=local_file,
+            destination_file=None,
             relative_path="nonexistent.txt",
         )
         pair = SyncPair(
-            local=temp_dir,
-            remote="/remote",
+            source=temp_dir,
+            destination="/remote",
             sync_mode=SyncMode.TWO_WAY,
         )
 
@@ -1032,13 +1032,13 @@ class TestSyncEngineExecuteDecision:
         decision = SyncDecision(
             action=SyncAction.UPLOAD,
             reason="Test",
-            local_file=None,
-            remote_file=None,
+            source_file=None,
+            destination_file=None,
             relative_path="test.txt",
         )
         pair = SyncPair(
-            local=temp_dir,
-            remote="/remote",
+            source=temp_dir,
+            destination="/remote",
             sync_mode=SyncMode.TWO_WAY,
         )
 
@@ -1050,13 +1050,13 @@ class TestSyncEngineExecuteDecision:
         decision = SyncDecision(
             action=SyncAction.DOWNLOAD,
             reason="Test",
-            local_file=None,
-            remote_file=None,
+            source_file=None,
+            destination_file=None,
             relative_path="test.txt",
         )
         pair = SyncPair(
-            local=temp_dir,
-            remote="/remote",
+            source=temp_dir,
+            destination="/remote",
             sync_mode=SyncMode.TWO_WAY,
         )
 
@@ -1065,22 +1065,22 @@ class TestSyncEngineExecuteDecision:
 
     def test_execute_delete_local_file_not_exists(self, sync_engine, temp_dir):
         """Test _execute_delete_local skips if file doesn't exist."""
-        local_file = LocalFile(
+        local_file = SourceFile(
             path=temp_dir / "nonexistent.txt",
             relative_path="nonexistent.txt",
             size=100,
             mtime=time.time(),
         )
         decision = SyncDecision(
-            action=SyncAction.DELETE_LOCAL,
+            action=SyncAction.DELETE_SOURCE,
             reason="Deleted in remote",
-            local_file=local_file,
-            remote_file=None,
+            source_file=local_file,
+            destination_file=None,
             relative_path="nonexistent.txt",
         )
         pair = SyncPair(
-            local=temp_dir,
-            remote="/remote",
+            source=temp_dir,
+            destination="/remote",
             sync_mode=SyncMode.TWO_WAY,
         )
 
@@ -1090,15 +1090,15 @@ class TestSyncEngineExecuteDecision:
     def test_execute_delete_local_no_local_file(self, sync_engine, temp_dir):
         """Test _execute_delete_local returns early if no local_file."""
         decision = SyncDecision(
-            action=SyncAction.DELETE_LOCAL,
+            action=SyncAction.DELETE_SOURCE,
             reason="Test",
-            local_file=None,
-            remote_file=None,
+            source_file=None,
+            destination_file=None,
             relative_path="test.txt",
         )
         pair = SyncPair(
-            local=temp_dir,
-            remote="/remote",
+            source=temp_dir,
+            destination="/remote",
             sync_mode=SyncMode.TWO_WAY,
         )
 
@@ -1108,10 +1108,10 @@ class TestSyncEngineExecuteDecision:
     def test_execute_delete_remote_no_remote_file(self, sync_engine, temp_dir):
         """Test _execute_delete_remote returns early if no remote_file."""
         decision = SyncDecision(
-            action=SyncAction.DELETE_REMOTE,
+            action=SyncAction.DELETE_DESTINATION,
             reason="Test",
-            local_file=None,
-            remote_file=None,
+            source_file=None,
+            destination_file=None,
             relative_path="test.txt",
         )
 
@@ -1121,16 +1121,16 @@ class TestSyncEngineExecuteDecision:
     def test_execute_rename_local_no_local_file(self, sync_engine, temp_dir):
         """Test _execute_rename_local returns early if no local_file."""
         decision = SyncDecision(
-            action=SyncAction.RENAME_LOCAL,
+            action=SyncAction.RENAME_SOURCE,
             reason="Test",
-            local_file=None,
-            remote_file=None,
+            source_file=None,
+            destination_file=None,
             relative_path="test.txt",
             new_path="new.txt",
         )
         pair = SyncPair(
-            local=temp_dir,
-            remote="/remote",
+            source=temp_dir,
+            destination="/remote",
             sync_mode=SyncMode.TWO_WAY,
         )
 
@@ -1139,23 +1139,23 @@ class TestSyncEngineExecuteDecision:
 
     def test_execute_rename_local_no_new_path(self, sync_engine, temp_dir):
         """Test _execute_rename_local returns early if no new_path."""
-        local_file = LocalFile(
+        local_file = SourceFile(
             path=temp_dir / "test.txt",
             relative_path="test.txt",
             size=100,
             mtime=time.time(),
         )
         decision = SyncDecision(
-            action=SyncAction.RENAME_LOCAL,
+            action=SyncAction.RENAME_SOURCE,
             reason="Test",
-            local_file=local_file,
-            remote_file=None,
+            source_file=local_file,
+            destination_file=None,
             relative_path="test.txt",
             new_path=None,
         )
         pair = SyncPair(
-            local=temp_dir,
-            remote="/remote",
+            source=temp_dir,
+            destination="/remote",
             sync_mode=SyncMode.TWO_WAY,
         )
 
@@ -1164,24 +1164,24 @@ class TestSyncEngineExecuteDecision:
 
     def test_execute_rename_local_file_not_exists(self, sync_engine, temp_dir):
         """Test _execute_rename_local skips if file doesn't exist."""
-        local_file = LocalFile(
+        local_file = SourceFile(
             path=temp_dir / "nonexistent.txt",
             relative_path="nonexistent.txt",
             size=100,
             mtime=time.time(),
         )
         decision = SyncDecision(
-            action=SyncAction.RENAME_LOCAL,
+            action=SyncAction.RENAME_SOURCE,
             reason="Test",
-            local_file=local_file,
-            remote_file=None,
+            source_file=local_file,
+            destination_file=None,
             relative_path="nonexistent.txt",
             old_path="nonexistent.txt",
             new_path="new.txt",
         )
         pair = SyncPair(
-            local=temp_dir,
-            remote="/remote",
+            source=temp_dir,
+            destination="/remote",
             sync_mode=SyncMode.TWO_WAY,
         )
 
@@ -1191,10 +1191,10 @@ class TestSyncEngineExecuteDecision:
     def test_execute_rename_remote_no_remote_file(self, sync_engine):
         """Test _execute_rename_remote returns early if no remote_file."""
         decision = SyncDecision(
-            action=SyncAction.RENAME_REMOTE,
+            action=SyncAction.RENAME_DESTINATION,
             reason="Test",
-            local_file=None,
-            remote_file=None,
+            source_file=None,
+            destination_file=None,
             relative_path="test.txt",
             new_path="new.txt",
         )
@@ -1211,12 +1211,12 @@ class TestSyncEngineExecuteDecision:
         mock_entry.updated_at = "2025-01-01T00:00:00Z"
         mock_entry.hash = "abc123"
 
-        remote_file = RemoteFile(entry=mock_entry, relative_path="test.txt")
+        remote_file = DestinationFile(entry=mock_entry, relative_path="test.txt")
         decision = SyncDecision(
-            action=SyncAction.RENAME_REMOTE,
+            action=SyncAction.RENAME_DESTINATION,
             reason="Test",
-            local_file=None,
-            remote_file=remote_file,
+            source_file=None,
+            destination_file=remote_file,
             relative_path="test.txt",
             new_path=None,
         )
@@ -1231,7 +1231,7 @@ class TestSyncEngineBatchExecution:
     @pytest.fixture
     def mock_client(self):
         """Create a mock cloud client."""
-        return Mock(spec=CloudClientProtocol)
+        return Mock(spec=StorageClientProtocol)
 
     @pytest.fixture
     def mock_output_quiet(self):
@@ -1256,8 +1256,8 @@ class TestSyncEngineBatchExecution:
     def test_execute_batch_decisions_empty(self, sync_engine, temp_dir):
         """Test _execute_batch_decisions with empty list."""
         pair = SyncPair(
-            local=temp_dir,
-            remote="/remote",
+            source=temp_dir,
+            destination="/remote",
             sync_mode=SyncMode.TWO_WAY,
         )
 
@@ -1278,8 +1278,8 @@ class TestSyncEngineBatchExecution:
     ):
         """Test _execute_batch_decisions counts skips and conflicts."""
         pair = SyncPair(
-            local=temp_dir,
-            remote="/remote",
+            source=temp_dir,
+            destination="/remote",
             sync_mode=SyncMode.TWO_WAY,
         )
 
@@ -1287,15 +1287,15 @@ class TestSyncEngineBatchExecution:
             SyncDecision(
                 action=SyncAction.SKIP,
                 reason="Already synced",
-                local_file=None,
-                remote_file=None,
+                source_file=None,
+                destination_file=None,
                 relative_path="skip.txt",
             ),
             SyncDecision(
                 action=SyncAction.CONFLICT,
                 reason="Both modified",
-                local_file=None,
-                remote_file=None,
+                source_file=None,
+                destination_file=None,
                 relative_path="conflict.txt",
             ),
         ]
@@ -1329,13 +1329,13 @@ class TestSyncEngineBatchExecution:
             decision = SyncDecision(
                 action=SyncAction.UPLOAD,
                 reason="Test",
-                local_file=Mock(),
-                remote_file=None,
+                source_file=Mock(),
+                destination_file=None,
                 relative_path="fail.txt",
             )
             pair = SyncPair(
-                local=temp_dir,
-                remote="/remote",
+                source=temp_dir,
+                destination="/remote",
                 sync_mode=SyncMode.TWO_WAY,
             )
             stats = {
@@ -1365,7 +1365,7 @@ class TestSyncEngineUploadFolder:
     @pytest.fixture
     def mock_client(self):
         """Create a mock cloud client."""
-        client = Mock(spec=CloudClientProtocol)
+        client = Mock(spec=StorageClientProtocol)
         client.upload_file = Mock(return_value={"id": 123})
         return client
 
@@ -1479,7 +1479,7 @@ class TestSyncEngineDownloadFolder:
     @pytest.fixture
     def mock_client(self):
         """Create a mock cloud client."""
-        client = Mock(spec=CloudClientProtocol)
+        client = Mock(spec=StorageClientProtocol)
         return client
 
     @pytest.fixture
@@ -1540,7 +1540,7 @@ class TestSyncEngineParallelExecution:
     @pytest.fixture
     def mock_client(self):
         """Create a mock cloud client."""
-        return Mock(spec=CloudClientProtocol)
+        return Mock(spec=StorageClientProtocol)
 
     @pytest.fixture
     def mock_output_quiet(self):
@@ -1567,8 +1567,8 @@ class TestSyncEngineParallelExecution:
         sync_engine.cancel()
 
         pair = SyncPair(
-            local=temp_dir,
-            remote="/remote",
+            source=temp_dir,
+            destination="/remote",
             sync_mode=SyncMode.TWO_WAY,
         )
 
@@ -1576,8 +1576,8 @@ class TestSyncEngineParallelExecution:
             SyncDecision(
                 action=SyncAction.UPLOAD,
                 reason="Test",
-                local_file=None,
-                remote_file=None,
+                source_file=None,
+                destination_file=None,
                 relative_path=f"file{i}.txt",
             )
             for i in range(5)
@@ -1598,8 +1598,8 @@ class TestSyncEngineParallelExecution:
     def test_execute_decisions_with_start_delay(self, sync_engine, temp_dir):
         """Test parallel execution with start delay."""
         pair = SyncPair(
-            local=temp_dir,
-            remote="/remote",
+            source=temp_dir,
+            destination="/remote",
             sync_mode=SyncMode.TWO_WAY,
         )
 
@@ -1607,7 +1607,7 @@ class TestSyncEngineParallelExecution:
         test_file = temp_dir / "test.txt"
         test_file.write_text("content")
 
-        local_file = LocalFile(
+        source_file = SourceFile(
             path=test_file,
             relative_path="test.txt",
             size=7,
@@ -1618,8 +1618,8 @@ class TestSyncEngineParallelExecution:
             SyncDecision(
                 action=SyncAction.SKIP,
                 reason="Test",
-                local_file=local_file,
-                remote_file=None,
+                source_file=source_file,
+                destination_file=None,
                 relative_path="test.txt",
             ),
         ]
@@ -1645,7 +1645,7 @@ class TestSyncEngineEnsureRemoteFolders:
     @pytest.fixture
     def mock_client(self):
         """Create a mock cloud client."""
-        client = Mock(spec=CloudClientProtocol)
+        client = Mock(spec=StorageClientProtocol)
         client.create_folder = Mock(return_value={"status": "success"})
         return client
 
@@ -1670,8 +1670,8 @@ class TestSyncEngineEnsureRemoteFolders:
             mock_client, mock_entries_manager_factory, output=mock_output_quiet
         )
         pair = SyncPair(
-            local=temp_dir,
-            remote="/remote",
+            source=temp_dir,
+            destination="/remote",
             sync_mode=SyncMode.TWO_WAY,
         )
 
@@ -1679,8 +1679,8 @@ class TestSyncEngineEnsureRemoteFolders:
             SyncDecision(
                 action=SyncAction.DOWNLOAD,
                 reason="Test",
-                local_file=None,
-                remote_file=None,
+                source_file=None,
+                destination_file=None,
                 relative_path="test.txt",
             ),
         ]
@@ -1698,8 +1698,8 @@ class TestSyncEngineEnsureRemoteFolders:
             mock_client, mock_entries_manager_factory, output=mock_output_quiet
         )
         pair = SyncPair(
-            local=temp_dir,
-            remote="",  # No remote prefix
+            source=temp_dir,
+            destination="",  # No destination prefix
             sync_mode=SyncMode.TWO_WAY,
         )
 
@@ -1707,8 +1707,8 @@ class TestSyncEngineEnsureRemoteFolders:
             SyncDecision(
                 action=SyncAction.UPLOAD,
                 reason="Test",
-                local_file=Mock(),
-                remote_file=None,
+                source_file=Mock(),
+                destination_file=None,
                 relative_path="file.txt",  # No folder
             ),
         ]
@@ -1726,8 +1726,8 @@ class TestSyncEngineEnsureRemoteFolders:
             mock_client, mock_entries_manager_factory, output=mock_output_quiet
         )
         pair = SyncPair(
-            local=temp_dir,
-            remote="/remote",
+            source=temp_dir,
+            destination="/remote",
             sync_mode=SyncMode.TWO_WAY,
         )
 
@@ -1735,8 +1735,8 @@ class TestSyncEngineEnsureRemoteFolders:
             SyncDecision(
                 action=SyncAction.UPLOAD,
                 reason="Test",
-                local_file=Mock(),
-                remote_file=None,
+                source_file=Mock(),
+                destination_file=None,
                 relative_path="subdir/file.txt",
             ),
         ]
@@ -1757,8 +1757,8 @@ class TestSyncEngineEnsureRemoteFolders:
             mock_client, mock_entries_manager_factory, output=mock_output_quiet
         )
         pair = SyncPair(
-            local=temp_dir,
-            remote="/remote",
+            source=temp_dir,
+            destination="/remote",
             sync_mode=SyncMode.TWO_WAY,
         )
 
@@ -1766,8 +1766,8 @@ class TestSyncEngineEnsureRemoteFolders:
             SyncDecision(
                 action=SyncAction.UPLOAD,
                 reason="Test",
-                local_file=Mock(),
-                remote_file=None,
+                source_file=Mock(),
+                destination_file=None,
                 relative_path="subdir/file.txt",
             ),
         ]
@@ -1782,7 +1782,7 @@ class TestSyncEngineExecuteOrderedOperations:
     @pytest.fixture
     def mock_client(self):
         """Create a mock cloud client."""
-        return Mock(spec=CloudClientProtocol)
+        return Mock(spec=StorageClientProtocol)
 
     @pytest.fixture
     def mock_output_quiet(self):
@@ -1812,8 +1812,8 @@ class TestSyncEngineExecuteOrderedOperations:
             mock_client, mock_entries_manager_factory, output=mock_output_quiet
         )
         pair = SyncPair(
-            local=temp_dir,
-            remote="/remote",
+            source=temp_dir,
+            destination="/remote",
             sync_mode=SyncMode.TWO_WAY,
         )
 
@@ -1841,8 +1841,8 @@ class TestSyncEngineExecuteOrderedOperations:
             mock_client, mock_entries_manager_factory, output=mock_output
         )
         pair = SyncPair(
-            local=temp_dir,
-            remote="/remote",
+            source=temp_dir,
+            destination="/remote",
             sync_mode=SyncMode.TWO_WAY,
         )
 
@@ -1870,8 +1870,8 @@ class TestSyncEngineExecuteOrderedOperations:
             mock_client, mock_entries_manager_factory, output=mock_output_quiet
         )
         pair = SyncPair(
-            local=temp_dir,
-            remote="/remote",
+            source=temp_dir,
+            destination="/remote",
             sync_mode=SyncMode.TWO_WAY,
         )
 
@@ -1879,8 +1879,8 @@ class TestSyncEngineExecuteOrderedOperations:
             SyncDecision(
                 action=SyncAction.SKIP,
                 reason="Test",
-                local_file=None,
-                remote_file=None,
+                source_file=None,
+                destination_file=None,
                 relative_path="test.txt",
             ),
         ]

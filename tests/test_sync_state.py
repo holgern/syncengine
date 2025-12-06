@@ -4,23 +4,23 @@ import json
 from unittest.mock import MagicMock
 
 from syncengine.state import (
-    LocalItemState,
-    LocalTree,
-    RemoteItemState,
-    RemoteTree,
+    DestinationItemState,
+    DestinationTree,
+    SourceItemState,
+    SourceTree,
     SyncState,
     SyncStateManager,
-    build_local_tree_from_files,
-    build_remote_tree_from_files,
+    build_destination_tree_from_files,
+    build_source_tree_from_files,
 )
 
 
-class TestLocalItemState:
-    """Tests for LocalItemState dataclass."""
+class TestSourceItemState:
+    """Tests for SourceItemState dataclass."""
 
     def test_basic_initialization(self):
         """Test basic initialization."""
-        item = LocalItemState(
+        item = SourceItemState(
             path="folder/file.txt",
             size=1024,
             mtime=1234567890.0,
@@ -35,7 +35,7 @@ class TestLocalItemState:
 
     def test_initialization_with_all_params(self):
         """Test initialization with all parameters."""
-        item = LocalItemState(
+        item = SourceItemState(
             path="folder/dir",
             size=0,
             mtime=1234567890.0,
@@ -48,7 +48,7 @@ class TestLocalItemState:
 
     def test_to_dict(self):
         """Test conversion to dictionary."""
-        item = LocalItemState(
+        item = SourceItemState(
             path="test.txt",
             size=100,
             mtime=1234567890.0,
@@ -73,7 +73,7 @@ class TestLocalItemState:
             "item_type": "file",
             "creation_time": 1234567800.0,
         }
-        item = LocalItemState.from_dict(d)
+        item = SourceItemState.from_dict(d)
         assert item.path == "test.txt"
         assert item.size == 100
         assert item.file_id == 99999
@@ -88,13 +88,13 @@ class TestLocalItemState:
             "inode": 99999,  # Legacy key
             "item_type": "file",
         }
-        item = LocalItemState.from_dict(d)
+        item = SourceItemState.from_dict(d)
         assert item.file_id == 99999
 
     def test_from_dict_defaults(self):
         """Test creation from dictionary with missing fields."""
         d = {}
-        item = LocalItemState.from_dict(d)
+        item = SourceItemState.from_dict(d)
         assert item.path == ""
         assert item.size == 0
         assert item.mtime == 0.0
@@ -103,12 +103,12 @@ class TestLocalItemState:
         assert item.creation_time is None
 
 
-class TestRemoteItemState:
-    """Tests for RemoteItemState dataclass."""
+class TestDestinationItemState:
+    """Tests for DestinationItemState dataclass."""
 
     def test_basic_initialization(self):
         """Test basic initialization."""
-        item = RemoteItemState(
+        item = DestinationItemState(
             path="folder/file.txt",
             size=1024,
             mtime=1234567890.0,
@@ -123,7 +123,7 @@ class TestRemoteItemState:
 
     def test_initialization_with_all_params(self):
         """Test initialization with all parameters."""
-        item = RemoteItemState(
+        item = DestinationItemState(
             path="folder/dir",
             size=0,
             mtime=None,
@@ -137,7 +137,7 @@ class TestRemoteItemState:
 
     def test_to_dict(self):
         """Test conversion to dictionary."""
-        item = RemoteItemState(
+        item = DestinationItemState(
             path="test.txt",
             size=100,
             mtime=1234567890.0,
@@ -162,7 +162,7 @@ class TestRemoteItemState:
             "item_type": "file",
             "file_hash": "hash123",
         }
-        item = RemoteItemState.from_dict(d)
+        item = DestinationItemState.from_dict(d)
         assert item.path == "test.txt"
         assert item.size == 100
         assert item.id == 99999
@@ -177,13 +177,13 @@ class TestRemoteItemState:
             "uuid": 99999,  # Legacy key
             "item_type": "file",
         }
-        item = RemoteItemState.from_dict(d)
+        item = DestinationItemState.from_dict(d)
         assert item.id == 99999
 
     def test_from_dict_defaults(self):
         """Test creation from dictionary with missing fields."""
         d = {}
-        item = RemoteItemState.from_dict(d)
+        item = DestinationItemState.from_dict(d)
         assert item.path == ""
         assert item.size == 0
         assert item.mtime is None
@@ -192,20 +192,20 @@ class TestRemoteItemState:
         assert item.file_hash == ""
 
 
-class TestLocalTree:
-    """Tests for LocalTree dataclass."""
+class TestSourceTree:
+    """Tests for SourceTree dataclass."""
 
     def test_empty_tree(self):
         """Test empty tree."""
-        tree = LocalTree()
+        tree = SourceTree()
         assert tree.size == 0
         assert tree.get_by_path("any") is None
         assert tree.get_by_file_id(123) is None
 
     def test_add_item(self):
         """Test adding an item."""
-        tree = LocalTree()
-        item = LocalItemState("test.txt", 100, 123456.0, 99)
+        tree = SourceTree()
+        item = SourceItemState("test.txt", 100, 123456.0, 99)
         tree.add_item(item)
 
         assert tree.size == 1
@@ -214,8 +214,8 @@ class TestLocalTree:
 
     def test_remove_item(self):
         """Test removing an item."""
-        tree = LocalTree()
-        item = LocalItemState("test.txt", 100, 123456.0, 99)
+        tree = SourceTree()
+        item = SourceItemState("test.txt", 100, 123456.0, 99)
         tree.add_item(item)
 
         removed = tree.remove_item("test.txt")
@@ -226,14 +226,14 @@ class TestLocalTree:
 
     def test_remove_nonexistent_item(self):
         """Test removing a nonexistent item."""
-        tree = LocalTree()
+        tree = SourceTree()
         removed = tree.remove_item("nonexistent.txt")
         assert removed is None
 
     def test_to_dict(self):
         """Test conversion to dictionary."""
-        tree = LocalTree()
-        item = LocalItemState("test.txt", 100, 123456.0, 99)
+        tree = SourceTree()
+        item = SourceItemState("test.txt", 100, 123456.0, 99)
         tree.add_item(item)
 
         d = tree.to_dict()
@@ -262,7 +262,7 @@ class TestLocalTree:
                 }
             },
         }
-        tree = LocalTree.from_dict(d)
+        tree = SourceTree.from_dict(d)
         assert tree.size == 1
         assert tree.get_by_path("test.txt") is not None
 
@@ -286,24 +286,24 @@ class TestLocalTree:
                 }
             },
         }
-        tree = LocalTree.from_dict(d)
+        tree = SourceTree.from_dict(d)
         assert tree.get_by_file_id(99) is not None
 
 
-class TestRemoteTree:
-    """Tests for RemoteTree dataclass."""
+class TestDestinationTree:
+    """Tests for DestinationTree dataclass."""
 
     def test_empty_tree(self):
         """Test empty tree."""
-        tree = RemoteTree()
+        tree = DestinationTree()
         assert tree.size == 0
         assert tree.get_by_path("any") is None
         assert tree.get_by_id(123) is None
 
     def test_add_item(self):
         """Test adding an item."""
-        tree = RemoteTree()
-        item = RemoteItemState("test.txt", 100, 123456.0, 99)
+        tree = DestinationTree()
+        item = DestinationItemState("test.txt", 100, 123456.0, 99)
         tree.add_item(item)
 
         assert tree.size == 1
@@ -312,8 +312,8 @@ class TestRemoteTree:
 
     def test_remove_item(self):
         """Test removing an item."""
-        tree = RemoteTree()
-        item = RemoteItemState("test.txt", 100, 123456.0, 99)
+        tree = DestinationTree()
+        item = DestinationItemState("test.txt", 100, 123456.0, 99)
         tree.add_item(item)
 
         removed = tree.remove_item("test.txt")
@@ -324,14 +324,14 @@ class TestRemoteTree:
 
     def test_remove_nonexistent_item(self):
         """Test removing a nonexistent item."""
-        tree = RemoteTree()
+        tree = DestinationTree()
         removed = tree.remove_item("nonexistent.txt")
         assert removed is None
 
     def test_to_dict(self):
         """Test conversion to dictionary."""
-        tree = RemoteTree()
-        item = RemoteItemState("test.txt", 100, 123456.0, 99)
+        tree = DestinationTree()
+        item = DestinationItemState("test.txt", 100, 123456.0, 99)
         tree.add_item(item)
 
         d = tree.to_dict()
@@ -360,7 +360,7 @@ class TestRemoteTree:
                 }
             },
         }
-        tree = RemoteTree.from_dict(d)
+        tree = DestinationTree.from_dict(d)
         assert tree.size == 1
         assert tree.get_by_path("test.txt") is not None
 
@@ -384,7 +384,7 @@ class TestRemoteTree:
                 }
             },
         }
-        tree = RemoteTree.from_dict(d)
+        tree = DestinationTree.from_dict(d)
         assert tree.get_by_id(99) is not None
 
 
@@ -394,30 +394,30 @@ class TestSyncState:
     def test_basic_initialization(self):
         """Test basic initialization."""
         state = SyncState(
-            local_path="/home/user/sync",
-            remote_path="/cloud/sync",
+            source_path="/home/user/sync",
+            destination_path="/cloud/sync",
         )
-        assert state.local_path == "/home/user/sync"
-        assert state.remote_path == "/cloud/sync"
-        assert state.local_tree.size == 0
-        assert state.remote_tree.size == 0
+        assert state.source_path == "/home/user/sync"
+        assert state.destination_path == "/cloud/sync"
+        assert state.source_tree.size == 0
+        assert state.destination_tree.size == 0
         assert state.last_sync is None
         assert state.version == 2
 
     def test_to_dict(self):
         """Test conversion to dictionary."""
         state = SyncState(
-            local_path="/home/user/sync",
-            remote_path="/cloud/sync",
+            source_path="/home/user/sync",
+            destination_path="/cloud/sync",
         )
         state.synced_files = {"file1.txt", "file2.txt"}
         state.last_sync = "2025-01-15T10:30:00"
 
         d = state.to_dict()
-        assert d["local_path"] == "/home/user/sync"
-        assert d["remote_path"] == "/cloud/sync"
-        assert "local_tree" in d
-        assert "remote_tree" in d
+        assert d["source_path"] == "/home/user/sync"
+        assert d["destination_path"] == "/cloud/sync"
+        assert "source_tree" in d
+        assert "destination_tree" in d
         assert d["last_sync"] == "2025-01-15T10:30:00"
         assert set(d["synced_files"]) == {"file1.txt", "file2.txt"}
 
@@ -425,25 +425,25 @@ class TestSyncState:
         """Test creation from v2 dictionary format."""
         d = {
             "version": 2,
-            "local_path": "/home/user/sync",
-            "remote_path": "/cloud/sync",
-            "local_tree": {"tree": {}, "file_ids": {}},
-            "remote_tree": {"tree": {}, "ids": {}},
-            "local_file_hashes": {},
+            "source_path": "/home/user/sync",
+            "destination_path": "/cloud/sync",
+            "source_tree": {"tree": {}, "file_ids": {}},
+            "destination_tree": {"tree": {}, "ids": {}},
+            "source_file_hashes": {},
             "last_sync": "2025-01-15T10:30:00",
             "synced_files": ["file1.txt"],
         }
         state = SyncState.from_dict(d)
         assert state.version == 2
-        assert state.local_path == "/home/user/sync"
+        assert state.source_path == "/home/user/sync"
         assert state.last_sync == "2025-01-15T10:30:00"
 
     def test_from_dict_v1_legacy(self):
         """Test creation from v1 legacy dictionary format."""
         d = {
             "version": 1,
-            "local_path": "/home/user/sync",
-            "remote_path": "/cloud/sync",
+            "source_path": "/home/user/sync",
+            "destination_path": "/cloud/sync",
             "synced_files": ["file1.txt", "file2.txt"],
             "last_sync": "2025-01-15T10:30:00",
         }
@@ -451,11 +451,11 @@ class TestSyncState:
         assert state.version == 1
         assert state.synced_files == {"file1.txt", "file2.txt"}
 
-    def test_from_dict_without_local_tree(self):
-        """Test creation from dictionary without local_tree (legacy)."""
+    def test_from_dict_without_source_tree(self):
+        """Test creation from dictionary without source_tree (legacy)."""
         d = {
-            "local_path": "/home/user/sync",
-            "remote_path": "/cloud/sync",
+            "source_path": "/home/user/sync",
+            "destination_path": "/cloud/sync",
             "synced_files": ["file1.txt"],
         }
         state = SyncState.from_dict(d)
@@ -464,8 +464,8 @@ class TestSyncState:
     def test_get_synced_paths_v1(self):
         """Test get_synced_paths for v1 format."""
         state = SyncState(
-            local_path="/home/user/sync",
-            remote_path="/cloud/sync",
+            source_path="/home/user/sync",
+            destination_path="/cloud/sync",
             version=1,
         )
         state.synced_files = {"file1.txt", "file2.txt"}
@@ -476,20 +476,20 @@ class TestSyncState:
     def test_get_synced_paths_v2(self):
         """Test get_synced_paths for v2 format."""
         state = SyncState(
-            local_path="/home/user/sync",
-            remote_path="/cloud/sync",
+            source_path="/home/user/sync",
+            destination_path="/cloud/sync",
         )
 
         # Add items to both trees
-        local_item = LocalItemState("common.txt", 100, 123456.0, 1)
-        state.local_tree.add_item(local_item)
-        local_only = LocalItemState("local_only.txt", 100, 123456.0, 2)
-        state.local_tree.add_item(local_only)
+        local_item = SourceItemState("common.txt", 100, 123456.0, 1)
+        state.source_tree.add_item(local_item)
+        local_only = SourceItemState("local_only.txt", 100, 123456.0, 2)
+        state.source_tree.add_item(local_only)
 
-        remote_item = RemoteItemState("common.txt", 100, 123456.0, 1)
-        state.remote_tree.add_item(remote_item)
-        remote_only = RemoteItemState("remote_only.txt", 100, 123456.0, 2)
-        state.remote_tree.add_item(remote_only)
+        remote_item = DestinationItemState("common.txt", 100, 123456.0, 1)
+        state.destination_tree.add_item(remote_item)
+        remote_only = DestinationItemState("remote_only.txt", 100, 123456.0, 2)
+        state.destination_tree.add_item(remote_only)
 
         paths = state.get_synced_paths()
         assert paths == {"common.txt"}  # Only intersection
@@ -523,25 +523,25 @@ class TestSyncStateManager:
         remote_path = "/remote/path"
 
         # Create and save state
-        local_tree = LocalTree()
-        local_tree.add_item(LocalItemState("test.txt", 100, 123456.0, 99))
-        remote_tree = RemoteTree()
-        remote_tree.add_item(RemoteItemState("test.txt", 100, 123456.0, 88))
+        local_tree = SourceTree()
+        local_tree.add_item(SourceItemState("test.txt", 100, 123456.0, 99))
+        remote_tree = DestinationTree()
+        remote_tree.add_item(DestinationItemState("test.txt", 100, 123456.0, 88))
 
         manager.save_state(
-            local_path=local_path,
-            remote_path=remote_path,
-            local_tree=local_tree,
-            remote_tree=remote_tree,
-            local_file_hashes={"test.txt": "abc123"},
+            source_path=local_path,
+            destination_path=remote_path,
+            source_tree=local_tree,
+            destination_tree=remote_tree,
+            source_file_hashes={"test.txt": "abc123"},
         )
 
         # Load and verify
         loaded = manager.load_state(local_path, remote_path)
         assert loaded is not None
-        assert loaded.local_tree.size == 1
-        assert loaded.remote_tree.size == 1
-        assert loaded.local_file_hashes["test.txt"] == "abc123"
+        assert loaded.source_tree.size == 1
+        assert loaded.destination_tree.size == 1
+        assert loaded.source_file_hashes["test.txt"] == "abc123"
 
     def test_save_state_with_synced_files_only(self, tmp_path):
         """Test saving state with only synced_files (legacy mode)."""
@@ -551,8 +551,8 @@ class TestSyncStateManager:
         remote_path = "/remote/path"
 
         manager.save_state(
-            local_path=local_path,
-            remote_path=remote_path,
+            source_path=local_path,
+            destination_path=remote_path,
             synced_files={"file1.txt", "file2.txt"},
         )
 
@@ -567,16 +567,16 @@ class TestSyncStateManager:
         local_path.mkdir()
         remote_path = "/remote/path"
 
-        local_tree = LocalTree()
-        local_tree.add_item(LocalItemState("common.txt", 100, 123456.0, 99))
-        remote_tree = RemoteTree()
-        remote_tree.add_item(RemoteItemState("common.txt", 100, 123456.0, 88))
+        local_tree = SourceTree()
+        local_tree.add_item(SourceItemState("common.txt", 100, 123456.0, 99))
+        remote_tree = DestinationTree()
+        remote_tree.add_item(DestinationItemState("common.txt", 100, 123456.0, 88))
 
         manager.save_state_from_trees(
-            local_path=local_path,
-            remote_path=remote_path,
-            local_tree=local_tree,
-            remote_tree=remote_tree,
+            source_path=local_path,
+            destination_path=remote_path,
+            source_tree=local_tree,
+            destination_tree=remote_tree,
         )
 
         loaded = manager.load_state(local_path, remote_path)
@@ -592,8 +592,8 @@ class TestSyncStateManager:
 
         # Save state first
         manager.save_state(
-            local_path=local_path,
-            remote_path=remote_path,
+            source_path=local_path,
+            destination_path=remote_path,
             synced_files={"file.txt"},
         )
 
@@ -656,10 +656,10 @@ class TestSyncStateManager:
 
 
 class TestBuildTreeFromFiles:
-    """Tests for build_local_tree_from_files and build_remote_tree_from_files."""
+    """Tests for build_source_tree_from_files and build_destination_tree_from_files."""
 
     def test_build_local_tree(self):
-        """Test building LocalTree from LocalFile objects."""
+        """Test building SourceTree from LocalFile objects."""
         # Create mock LocalFile objects
         files = []
         for i in range(3):
@@ -671,14 +671,14 @@ class TestBuildTreeFromFiles:
             f.creation_time = 1234567800.0 + i
             files.append(f)
 
-        tree = build_local_tree_from_files(files)
+        tree = build_source_tree_from_files(files)
 
         assert tree.size == 3
         assert tree.get_by_path("file0.txt") is not None
         assert tree.get_by_file_id(1000) is not None
 
     def test_build_remote_tree(self):
-        """Test building RemoteTree from RemoteFile objects."""
+        """Test building DestinationTree from RemoteFile objects."""
         # Create mock RemoteFile objects
         files = []
         for i in range(3):
@@ -690,7 +690,7 @@ class TestBuildTreeFromFiles:
             f.hash = f"hash{i}"
             files.append(f)
 
-        tree = build_remote_tree_from_files(files)
+        tree = build_destination_tree_from_files(files)
 
         assert tree.size == 3
         assert tree.get_by_path("file0.txt") is not None

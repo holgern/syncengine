@@ -4,7 +4,7 @@ from enum import Enum
 
 
 class SyncMode(str, Enum):
-    """Synchronization modes for local and cloud sync.
+    """Synchronization modes for source and destination sync.
 
     Each mode has different behavior for file changes, deletions, conflicts.
     """
@@ -14,21 +14,25 @@ class SyncMode(str, Enum):
     """Mirror every action in both directions.
     Renaming, deleting & moving is applied to both sides."""
 
-    LOCAL_TO_CLOUD = "localToCloud"
-    """Mirror every action done locally to the cloud but never act on cloud changes.
-    Renaming, deleting & moving is only transferred to the cloud."""
+    SOURCE_TO_DESTINATION = "sourceToDestination"
+    """Mirror every action done at source to destination but never act on
+    destination changes. Renaming, deleting & moving is only transferred
+    to the destination."""
 
-    LOCAL_BACKUP = "localBackup"
-    """Only upload data to the cloud, never delete anything or act on cloud changes.
-    Renaming & moving is transferred to the cloud, but not local deletions."""
+    SOURCE_BACKUP = "sourceBackup"
+    """Only upload data to destination, never delete anything or act on
+    destination changes. Renaming & moving is transferred to destination,
+    but not source deletions."""
 
-    CLOUD_TO_LOCAL = "cloudToLocal"
-    """Mirror every action done in the cloud locally but never act on local changes.
-    Renaming, deleting & moving is only transferred to the local side."""
+    DESTINATION_TO_SOURCE = "destinationToSource"
+    """Mirror every action done at destination to source but never act on
+    source changes. Renaming, deleting & moving is only transferred
+    to the source side."""
 
-    CLOUD_BACKUP = "cloudBackup"
-    """Only download data from the cloud, never delete anything or act on local changes.
-    Renaming & moving is transferred to the local side, but not cloud deletions."""
+    DESTINATION_BACKUP = "destinationBackup"
+    """Only download data from destination, never delete anything or act on
+    source changes. Renaming & moving is transferred to source,
+    but not destination deletions."""
 
     @classmethod
     def from_string(cls, value: str) -> "SyncMode":
@@ -48,16 +52,16 @@ class SyncMode(str, Enum):
             SyncMode.TWO_WAY
             >>> SyncMode.from_string("tw")
             SyncMode.TWO_WAY
-            >>> SyncMode.from_string("ltc")
-            SyncMode.LOCAL_TO_CLOUD
+            >>> SyncMode.from_string("std")
+            SyncMode.SOURCE_TO_DESTINATION
         """
         # Map of abbreviations to full names
         abbreviations = {
             "tw": "twoWay",
-            "ltc": "localToCloud",
-            "lb": "localBackup",
-            "ctl": "cloudToLocal",
-            "cb": "cloudBackup",
+            "std": "sourceToDestination",
+            "sb": "sourceBackup",
+            "dts": "destinationToSource",
+            "db": "destinationBackup",
         }
 
         # Normalize input
@@ -83,8 +87,8 @@ class SyncMode(str, Enum):
         """Check if this mode allows uploading files."""
         return self in {
             SyncMode.TWO_WAY,
-            SyncMode.LOCAL_TO_CLOUD,
-            SyncMode.LOCAL_BACKUP,
+            SyncMode.SOURCE_TO_DESTINATION,
+            SyncMode.SOURCE_BACKUP,
         }
 
     @property
@@ -92,19 +96,19 @@ class SyncMode(str, Enum):
         """Check if this mode allows downloading files."""
         return self in {
             SyncMode.TWO_WAY,
-            SyncMode.CLOUD_TO_LOCAL,
-            SyncMode.CLOUD_BACKUP,
+            SyncMode.DESTINATION_TO_SOURCE,
+            SyncMode.DESTINATION_BACKUP,
         }
 
     @property
-    def allows_local_delete(self) -> bool:
-        """Check if this mode allows deleting local files."""
-        return self in {SyncMode.TWO_WAY, SyncMode.CLOUD_TO_LOCAL}
+    def allows_source_delete(self) -> bool:
+        """Check if this mode allows deleting source files."""
+        return self in {SyncMode.TWO_WAY, SyncMode.DESTINATION_TO_SOURCE}
 
     @property
-    def allows_remote_delete(self) -> bool:
-        """Check if this mode allows deleting remote files."""
-        return self in {SyncMode.TWO_WAY, SyncMode.LOCAL_TO_CLOUD}
+    def allows_destination_delete(self) -> bool:
+        """Check if this mode allows deleting destination files."""
+        return self in {SyncMode.TWO_WAY, SyncMode.SOURCE_TO_DESTINATION}
 
     @property
     def is_bidirectional(self) -> bool:
@@ -112,22 +116,24 @@ class SyncMode(str, Enum):
         return self == SyncMode.TWO_WAY
 
     @property
-    def requires_local_scan(self) -> bool:
-        """Check if this mode requires scanning local files.
+    def requires_source_scan(self) -> bool:
+        """Check if this mode requires scanning source files.
 
-        We need to scan local files if we might upload, delete locally,
-        or download (to compare against existing local files for idempotency).
+        We need to scan source files if we might upload, delete at source,
+        or download (to compare against existing source files for idempotency).
         """
-        return self.allows_upload or self.allows_local_delete or self.allows_download
+        return self.allows_upload or self.allows_source_delete or self.allows_download
 
     @property
-    def requires_remote_scan(self) -> bool:
-        """Check if this mode requires scanning remote files.
+    def requires_destination_scan(self) -> bool:
+        """Check if this mode requires scanning destination files.
 
-        We need to scan remote files if we might download, delete remotely,
-        or upload (to compare against existing remote files for idempotency).
+        We need to scan destination files if we might download, delete at destination,
+        or upload (to compare against existing destination files for idempotency).
         """
-        return self.allows_download or self.allows_remote_delete or self.allows_upload
+        return (
+            self.allows_download or self.allows_destination_delete or self.allows_upload
+        )
 
     def __str__(self) -> str:
         """Return string representation."""

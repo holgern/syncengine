@@ -4,6 +4,8 @@ from pathlib import Path
 
 from syncengine.constants import (
     DEFAULT_IGNORE_FILE_NAME as IGNORE_FILE_NAME,
+)
+from syncengine.constants import (
     DEFAULT_LOCAL_TRASH_DIR_NAME as LOCAL_TRASH_DIR_NAME,
 )
 from syncengine.ignore import (
@@ -193,7 +195,7 @@ class TestIgnoreFileManager:
         # After clear, default patterns are reloaded
         assert not manager.is_ignored("test.log")
         # Only default patterns remain
-        assert len(manager.rules) == 1  
+        assert len(manager.rules) == 1
 
     def test_get_effective_rules(self):
         """Test getting list of effective rules."""
@@ -238,7 +240,7 @@ class TestDefaultIgnorePatterns:
 
         # Scan should only find file.txt
         scanner = DirectoryScanner()
-        files = scanner.scan_local(tmp_path)
+        files = scanner.scan_source(tmp_path)
 
         paths = [f.relative_path for f in files]
         assert "file.txt" in paths
@@ -276,7 +278,7 @@ class TestDirectoryScannerWithIgnore:
         (tmp_path / "error.log").write_text("error content")
 
         scanner = DirectoryScanner(ignore_patterns=["*.log"])
-        files = scanner.scan_local(tmp_path)
+        files = scanner.scan_source(tmp_path)
 
         assert len(files) == 1
         assert files[0].relative_path == "file.txt"
@@ -290,7 +292,7 @@ class TestDirectoryScannerWithIgnore:
         (tmp_path / IGNORE_FILE_NAME).write_text("*.log\n*.tmp\n")
 
         scanner = DirectoryScanner(use_ignore_files=True)
-        files = scanner.scan_local(tmp_path)
+        files = scanner.scan_source(tmp_path)
 
         assert len(files) == 1
         assert files[0].relative_path == "file.txt"
@@ -303,7 +305,7 @@ class TestDirectoryScannerWithIgnore:
         (tmp_path / IGNORE_FILE_NAME).write_text("*.log\n")
 
         scanner = DirectoryScanner(use_ignore_files=False)
-        files = scanner.scan_local(tmp_path)
+        files = scanner.scan_source(tmp_path)
 
         # ignore is still excluded (it starts with .)
         assert len(files) == 2
@@ -331,7 +333,7 @@ class TestDirectoryScannerWithIgnore:
         (subdir / IGNORE_FILE_NAME).write_text("!important.log\n")
 
         scanner = DirectoryScanner(use_ignore_files=True)
-        files = scanner.scan_local(tmp_path)
+        files = scanner.scan_source(tmp_path)
 
         paths = sorted(f.relative_path for f in files)
         assert "data.txt" in paths
@@ -350,7 +352,7 @@ class TestDirectoryScannerWithIgnore:
         (tmp_path / IGNORE_FILE_NAME).write_text("temp/\n")
 
         scanner = DirectoryScanner(use_ignore_files=True)
-        files = scanner.scan_local(tmp_path)
+        files = scanner.scan_source(tmp_path)
 
         paths = [f.relative_path for f in files]
         assert "data.txt" in paths
@@ -371,7 +373,7 @@ class TestDirectoryScannerWithIgnore:
         (tmp_path / IGNORE_FILE_NAME).write_text("**/cache/**\n")
 
         scanner = DirectoryScanner(use_ignore_files=True)
-        files = scanner.scan_local(tmp_path)
+        files = scanner.scan_source(tmp_path)
 
         paths = [f.relative_path for f in files]
         assert "data.txt" in paths
@@ -390,7 +392,7 @@ class TestDirectoryScannerWithIgnore:
             exclude_dot_files=True,
             use_ignore_files=True,
         )
-        files = scanner.scan_local(tmp_path)
+        files = scanner.scan_source(tmp_path)
 
         paths = [f.relative_path for f in files]
         assert paths == ["file.txt"]
@@ -446,7 +448,7 @@ class TestKopiaExamples:
         )
 
         scanner = DirectoryScanner(use_ignore_files=True)
-        files = scanner.scan_local(thesis)
+        files = scanner.scan_source(thesis)
 
         paths = sorted(f.relative_path for f in files)
 

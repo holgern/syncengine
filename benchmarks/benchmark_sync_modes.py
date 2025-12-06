@@ -2,15 +2,15 @@
 Benchmark script to validate sync behavior for all 5 sync modes.
 
 This script tests all sync modes using local filesystem operations
-(simulating cloud storage with a local directory):
+(simulating destination storage with a local directory):
 
 1. TWO_WAY - Mirror every action in both directions
-2. LOCAL_TO_CLOUD - Mirror local actions to cloud, never act on cloud changes
-3. LOCAL_BACKUP - Upload to cloud, never delete or act on cloud changes
-4. CLOUD_TO_LOCAL - Mirror cloud actions locally, never act on local changes
-5. CLOUD_BACKUP - Download from cloud, never delete or act on local changes
+2. SOURCE_TO_DESTINATION - Mirror source to destination, ignore dest changes
+3. SOURCE_BACKUP - Upload to destination, never delete or act on dest changes
+4. DESTINATION_TO_SOURCE - Mirror dest to source, never act on source changes
+5. DESTINATION_BACKUP - Download from destination, never delete at source
 
-All operations use the syncengine library directly with a mock cloud client
+All operations use the syncengine library directly with a mock storage client
 that uses local filesystem operations.
 """
 
@@ -457,43 +457,43 @@ def count_files(directory: Path) -> int:
     return count
 
 
-def test_local_backup(
-    local_dir: Path, cloud_dir: Path, output: DefaultOutputHandler
+def test_source_backup(
+    source_dir: Path, dest_dir: Path, output: DefaultOutputHandler
 ) -> bool:
-    """Test LOCAL_BACKUP sync mode.
+    """Test SOURCE_BACKUP sync mode.
 
-    LOCAL_BACKUP: Only upload data to the cloud, never delete anything
-    or act on cloud changes.
+    SOURCE_BACKUP: Only upload data to the destination, never delete anything
+    or act on destination changes.
 
     Args:
-        local_dir: Local source directory
-        cloud_dir: Simulated cloud directory
+        source_dir: Source directory
+        dest_dir: Simulated destination storage directory
         output: Output handler
 
     Returns:
         True if test passed
     """
     print("\n" + "=" * 80)
-    print("TEST: LOCAL_BACKUP MODE")
+    print("TEST: SOURCE_BACKUP MODE")
     print("=" * 80)
-    print("Behavior: Upload to cloud, never delete or act on cloud changes")
+    print("Behavior: Upload to destination, never delete or act on destination changes")
 
     # Setup
-    local_src = local_dir / "local_backup_src"
-    cloud_storage = cloud_dir / "local_backup_cloud"
+    source_src = source_dir / "source_backup_src"
+    dest_storage = dest_dir / "source_backup_dest"
 
-    # Create test files in local
-    create_test_files(local_src, count=5, size_kb=1)
+    # Create test files in source
+    create_test_files(source_src, count=5, size_kb=1)
 
     # Create client and engine
-    client = LocalStorageClient(cloud_storage)
+    client = LocalStorageClient(dest_storage)
     factory = create_entries_manager_factory(client)
     engine = SyncEngine(client, factory, output=output)
 
     pair = SyncPair(
-        local=local_src,
-        remote="",  # Sync to root of cloud storage
-        sync_mode=SyncMode.LOCAL_BACKUP,
+        source=source_src,
+        destination="",  # Sync to root of destination storage
+        sync_mode=SyncMode.SOURCE_BACKUP,
     )
 
     # First sync - should upload all files
@@ -505,10 +505,10 @@ def test_local_backup(
         print(f"[FAIL] Expected 5 uploads, got {stats['uploads']}")
         return False
 
-    # Verify files exist in cloud
-    cloud_count = count_files(cloud_storage)
-    if cloud_count != 5:
-        print(f"[FAIL] Expected 5 files in cloud, found {cloud_count}")
+    # Verify files exist in destination
+    dest_count = count_files(dest_storage)
+    if dest_count != 5:
+        print(f"[FAIL] Expected 5 files in destination, found {dest_count}")
         return False
 
     print("[PASS] First sync uploaded 5 files")
@@ -524,62 +524,68 @@ def test_local_backup(
 
     print("[PASS] Second sync uploaded 0 files - idempotency confirmed")
 
-    # Delete a local file - should NOT delete from cloud (backup mode)
-    deleted_file = local_src / "test_file_000.txt"
+    # Delete a source file - should NOT delete from destination (backup mode)
+    deleted_file = source_src / "test_file_000.txt"
     deleted_file.unlink()
-    print(f"\n[INFO] Deleted local file: {deleted_file.name}")
+    print(f"\n[INFO] Deleted source file: {deleted_file.name}")
 
-    print("\n[SYNC] Third sync after local deletion (should NOT delete from cloud)...")
+    print(
+        "\n[SYNC] Third sync after source deletion "
+        "(should NOT delete from destination)..."
+    )
     stats = engine.sync_pair(pair)
     print(f"[STATS] {stats}")
 
-    cloud_count = count_files(cloud_storage)
-    if cloud_count != 5:
-        print(f"[FAIL] Cloud should still have 5 files, found {cloud_count}")
+    dest_count = count_files(dest_storage)
+    if dest_count != 5:
+        print(f"[FAIL] Destination should still have 5 files, found {dest_count}")
         return False
 
-    print("[PASS] LOCAL_BACKUP mode correctly preserved cloud files after local delete")
+    print(
+        "[PASS] SOURCE_BACKUP mode correctly preserved destination files "
+        "after source delete"
+    )
 
     return True
 
 
-def test_local_to_cloud(
-    local_dir: Path, cloud_dir: Path, output: DefaultOutputHandler
+def test_source_to_destination(
+    source_dir: Path, dest_dir: Path, output: DefaultOutputHandler
 ) -> bool:
-    """Test LOCAL_TO_CLOUD sync mode.
+    """Test SOURCE_TO_DESTINATION sync mode.
 
-    LOCAL_TO_CLOUD: Mirror every action done locally to the cloud but
-    never act on cloud changes.
+    SOURCE_TO_DESTINATION: Mirror every action done at source to destination but
+    never act on destination changes.
 
     Args:
-        local_dir: Local source directory
-        cloud_dir: Simulated cloud directory
+        source_dir: Source directory
+        dest_dir: Simulated destination storage directory
         output: Output handler
 
     Returns:
         True if test passed
     """
     print("\n" + "=" * 80)
-    print("TEST: LOCAL_TO_CLOUD MODE")
+    print("TEST: SOURCE_TO_DESTINATION MODE")
     print("=" * 80)
-    print("Behavior: Mirror local actions to cloud, including deletions")
+    print("Behavior: Mirror source actions to destination, including deletions")
 
     # Setup
-    local_src = local_dir / "local_to_cloud_src"
-    cloud_storage = cloud_dir / "local_to_cloud_cloud"
+    source_src = source_dir / "source_to_dest_src"
+    dest_storage = dest_dir / "source_to_dest_dest"
 
-    # Create test files in local
-    create_test_files(local_src, count=5, size_kb=1)
+    # Create test files in source
+    create_test_files(source_src, count=5, size_kb=1)
 
     # Create client and engine
-    client = LocalStorageClient(cloud_storage)
+    client = LocalStorageClient(dest_storage)
     factory = create_entries_manager_factory(client)
     engine = SyncEngine(client, factory, output=output)
 
     pair = SyncPair(
-        local=local_src,
-        remote="",
-        sync_mode=SyncMode.LOCAL_TO_CLOUD,
+        source=source_src,
+        destination="",
+        sync_mode=SyncMode.SOURCE_TO_DESTINATION,
     )
 
     # First sync - should upload all files
@@ -604,69 +610,79 @@ def test_local_to_cloud(
 
     print("[PASS] Idempotency confirmed")
 
-    # Delete a local file - SHOULD delete from cloud
-    deleted_file = local_src / "test_file_000.txt"
+    # Delete a source file - SHOULD delete from destination
+    deleted_file = source_src / "test_file_000.txt"
     deleted_file.unlink()
-    print(f"\n[INFO] Deleted local file: {deleted_file.name}")
+    print(f"\n[INFO] Deleted source file: {deleted_file.name}")
 
-    print("\n[SYNC] Third sync after local deletion (should delete from cloud)...")
+    print(
+        "\n[SYNC] Third sync after source deletion (should delete from destination)..."
+    )
     stats = engine.sync_pair(pair)
     print(f"[STATS] {stats}")
 
     if stats["deletes_remote"] != 1:
-        print(f"[FAIL] Expected 1 remote delete, got {stats['deletes_remote']}")
+        print(f"[FAIL] Expected 1 destination delete, got {stats['deletes_remote']}")
         return False
 
-    cloud_count = count_files(cloud_storage)
-    if cloud_count != 4:
-        print(f"[FAIL] Cloud should have 4 files after deletion, found {cloud_count}")
+    dest_count = count_files(dest_storage)
+    if dest_count != 4:
+        print(
+            f"[FAIL] Destination should have 4 files after deletion, found {dest_count}"
+        )
         return False
 
-    print("[PASS] LOCAL_TO_CLOUD mode correctly mirrored local deletion to cloud")
+    print(
+        "[PASS] SOURCE_TO_DESTINATION mode correctly mirrored "
+        "source deletion to destination"
+    )
 
     return True
 
 
-def test_cloud_backup(
-    local_dir: Path, cloud_dir: Path, output: DefaultOutputHandler
+def test_destination_backup(
+    source_dir: Path, dest_dir: Path, output: DefaultOutputHandler
 ) -> bool:
-    """Test CLOUD_BACKUP sync mode.
+    """Test DESTINATION_BACKUP sync mode.
 
-    CLOUD_BACKUP: Only download data from the cloud, never delete anything
-    or act on local changes.
+    DESTINATION_BACKUP: Only download data from the destination, never delete anything
+    or act on source changes.
 
     Args:
-        local_dir: Local destination directory
-        cloud_dir: Simulated cloud directory
+        source_dir: Source destination directory
+        dest_dir: Simulated destination storage directory
         output: Output handler
 
     Returns:
         True if test passed
     """
     print("\n" + "=" * 80)
-    print("TEST: CLOUD_BACKUP MODE")
+    print("TEST: DESTINATION_BACKUP MODE")
     print("=" * 80)
-    print("Behavior: Download from cloud, never delete locally or act on local changes")
+    print(
+        "Behavior: Download from destination, never delete at source "
+        "or act on source changes"
+    )
 
     # Setup
-    local_dest = local_dir / "cloud_backup_local"
-    cloud_storage = cloud_dir / "cloud_backup_cloud"
+    source_dest = source_dir / "dest_backup_source"
+    dest_storage = dest_dir / "dest_backup_dest"
 
-    # Create test files in "cloud" first
-    create_test_files(cloud_storage, count=5, size_kb=1)
+    # Create test files in "destination" first
+    create_test_files(dest_storage, count=5, size_kb=1)
 
     # Create client and engine
-    client = LocalStorageClient(cloud_storage)
+    client = LocalStorageClient(dest_storage)
     factory = create_entries_manager_factory(client)
     engine = SyncEngine(client, factory, output=output)
 
-    # Ensure local directory exists
-    local_dest.mkdir(parents=True, exist_ok=True)
+    # Ensure source directory exists
+    source_dest.mkdir(parents=True, exist_ok=True)
 
     pair = SyncPair(
-        local=local_dest,
-        remote="",
-        sync_mode=SyncMode.CLOUD_BACKUP,
+        source=source_dest,
+        destination="",
+        sync_mode=SyncMode.DESTINATION_BACKUP,
     )
 
     # First sync - should download all files
@@ -678,9 +694,9 @@ def test_cloud_backup(
         print(f"[FAIL] Expected 5 downloads, got {stats['downloads']}")
         return False
 
-    local_count = count_files(local_dest)
-    if local_count != 5:
-        print(f"[FAIL] Expected 5 local files, found {local_count}")
+    source_count = count_files(source_dest)
+    if source_count != 5:
+        print(f"[FAIL] Expected 5 source files, found {source_count}")
         return False
 
     print("[PASS] First sync downloaded 5 files")
@@ -696,65 +712,71 @@ def test_cloud_backup(
 
     print("[PASS] Idempotency confirmed")
 
-    # Delete a cloud file - should NOT delete locally (backup mode)
-    cloud_file = cloud_storage / "test_file_000.txt"
-    cloud_file.unlink()
-    print(f"\n[INFO] Deleted cloud file: {cloud_file.name}")
+    # Delete a destination file - should NOT delete at source (backup mode)
+    dest_file = dest_storage / "test_file_000.txt"
+    dest_file.unlink()
+    print(f"\n[INFO] Deleted destination file: {dest_file.name}")
 
-    print("\n[SYNC] Third sync after cloud deletion (should NOT delete locally)...")
+    print(
+        "\n[SYNC] Third sync after destination deletion "
+        "(should NOT delete at source)..."
+    )
     stats = engine.sync_pair(pair)
     print(f"[STATS] {stats}")
 
-    local_count = count_files(local_dest)
-    if local_count != 5:
-        print(f"[FAIL] Local should still have 5 files, found {local_count}")
+    source_count = count_files(source_dest)
+    if source_count != 5:
+        print(f"[FAIL] Source should still have 5 files, found {source_count}")
         return False
 
-    print("[PASS] CLOUD_BACKUP mode correctly preserved local files after cloud delete")
+    print(
+        "[PASS] DESTINATION_BACKUP mode correctly preserved "
+        "source files after destination delete"
+    )
 
     return True
 
 
-def test_cloud_to_local(
-    local_dir: Path, cloud_dir: Path, output: DefaultOutputHandler
+def test_destination_to_source(
+    source_dir: Path, dest_dir: Path, output: DefaultOutputHandler
 ) -> bool:
-    """Test CLOUD_TO_LOCAL sync mode.
+    """Test DESTINATION_TO_SOURCE sync mode.
 
-    CLOUD_TO_LOCAL: Mirror every action done in the cloud locally but
-    never act on local changes.
+    DESTINATION_TO_SOURCE: Mirror every action done at destination to source but
+    never act on source changes.
 
     Args:
-        local_dir: Local destination directory
-        cloud_dir: Simulated cloud directory
+        source_dir: Source destination directory
+        dest_dir: Simulated destination storage directory
         output: Output handler
 
     Returns:
         True if test passed
     """
     print("\n" + "=" * 80)
-    print("TEST: CLOUD_TO_LOCAL MODE")
+    print("TEST: DESTINATION_TO_SOURCE MODE")
     print("=" * 80)
-    print("Behavior: Mirror cloud actions locally, including deletions")
+    print("Behavior: Mirror destination actions to source, including deletions")
 
     # Setup
-    local_dest = local_dir / "cloud_to_local_local"
-    cloud_storage = cloud_dir / "cloud_to_local_cloud"
+    source_dest = source_dir / "dest_to_source_source"
+    dest_storage = dest_dir / "dest_to_source_dest"
 
-    # Create test files in "cloud" first
-    create_test_files(cloud_storage, count=5, size_kb=1)
+    # Create test files in "destination" first
+    create_test_files(dest_storage, count=5, size_kb=1)
 
     # Create client and engine
-    client = LocalStorageClient(cloud_storage)
+    client = LocalStorageClient(dest_storage)
     factory = create_entries_manager_factory(client)
     engine = SyncEngine(client, factory, output=output)
 
-    # Ensure local directory exists
-    local_dest.mkdir(parents=True, exist_ok=True)
+    # Ensure source directory exists
+    source_dest.mkdir(parents=True, exist_ok=True)
 
     pair = SyncPair(
-        local=local_dest,
-        remote="",
-        sync_mode=SyncMode.CLOUD_TO_LOCAL,
+        source=source_dest,
+        destination="",
+        sync_mode=SyncMode.DESTINATION_TO_SOURCE,
     )
 
     # First sync - should download all files
@@ -779,39 +801,42 @@ def test_cloud_to_local(
 
     print("[PASS] Idempotency confirmed")
 
-    # Delete a cloud file - SHOULD delete locally
-    cloud_file = cloud_storage / "test_file_000.txt"
-    cloud_file.unlink()
-    print(f"\n[INFO] Deleted cloud file: {cloud_file.name}")
+    # Delete a destination file - SHOULD delete at source
+    dest_file = dest_storage / "test_file_000.txt"
+    dest_file.unlink()
+    print(f"\n[INFO] Deleted destination file: {dest_file.name}")
 
-    print("\n[SYNC] Third sync after cloud deletion (should delete locally)...")
+    print("\n[SYNC] Third sync after destination deletion (should delete at source)...")
     stats = engine.sync_pair(pair)
     print(f"[STATS] {stats}")
 
     if stats["deletes_local"] != 1:
-        print(f"[FAIL] Expected 1 local delete, got {stats['deletes_local']}")
+        print(f"[FAIL] Expected 1 source delete, got {stats['deletes_local']}")
         return False
 
-    local_count = count_files(local_dest)
-    if local_count != 4:
-        print(f"[FAIL] Local should have 4 files after deletion, found {local_count}")
+    source_count = count_files(source_dest)
+    if source_count != 4:
+        print(f"[FAIL] Source should have 4 files after deletion, found {source_count}")
         return False
 
-    print("[PASS] CLOUD_TO_LOCAL mode correctly mirrored cloud deletion to local")
+    print(
+        "[PASS] DESTINATION_TO_SOURCE mode correctly mirrored "
+        "destination deletion to source"
+    )
 
     return True
 
 
 def test_two_way(
-    local_dir: Path, cloud_dir: Path, output: DefaultOutputHandler
+    source_dir: Path, dest_dir: Path, output: DefaultOutputHandler
 ) -> bool:
     """Test TWO_WAY sync mode.
 
     TWO_WAY: Mirror every action in both directions.
 
     Args:
-        local_dir: Local directory
-        cloud_dir: Simulated cloud directory
+        source_dir: Source directory
+        dest_dir: Simulated destination storage directory
         output: Output handler
 
     Returns:
@@ -823,20 +848,20 @@ def test_two_way(
     print("Behavior: Mirror actions in both directions")
 
     # Setup
-    local_src = local_dir / "two_way_local"
-    cloud_storage = cloud_dir / "two_way_cloud"
+    source_src = source_dir / "two_way_source"
+    dest_storage = dest_dir / "two_way_dest"
 
-    # Create test files in local
-    create_test_files(local_src, count=3, size_kb=1)
+    # Create test files in source
+    create_test_files(source_src, count=3, size_kb=1)
 
     # Create client and engine
-    client = LocalStorageClient(cloud_storage)
+    client = LocalStorageClient(dest_storage)
     factory = create_entries_manager_factory(client)
     engine = SyncEngine(client, factory, output=output)
 
     pair = SyncPair(
-        local=local_src,
-        remote="",
+        source=source_src,
+        destination="",
         sync_mode=SyncMode.TWO_WAY,
     )
 
@@ -851,13 +876,13 @@ def test_two_way(
 
     print("[PASS] First sync uploaded 3 files")
 
-    # Now add files directly to "cloud"
-    print("\n[INFO] Adding 2 files directly to cloud...")
-    (cloud_storage / "cloud_file_001.txt").write_text("Cloud content 1")
-    (cloud_storage / "cloud_file_002.txt").write_text("Cloud content 2")
+    # Now add files directly to "destination"
+    print("\n[INFO] Adding 2 files directly to destination...")
+    (dest_storage / "dest_file_001.txt").write_text("Destination content 1")
+    (dest_storage / "dest_file_002.txt").write_text("Destination content 2")
 
-    # Second sync - should download cloud files
-    print("\n[SYNC] Second sync (should download 2 cloud files)...")
+    # Second sync - should download destination files
+    print("\n[SYNC] Second sync (should download 2 destination files)...")
     stats = engine.sync_pair(pair)
     print(f"[STATS] {stats}")
 
@@ -865,12 +890,12 @@ def test_two_way(
         print(f"[FAIL] Expected 2 downloads, got {stats['downloads']}")
         return False
 
-    local_count = count_files(local_src)
-    if local_count != 5:
-        print(f"[FAIL] Expected 5 local files, found {local_count}")
+    source_count = count_files(source_src)
+    if source_count != 5:
+        print(f"[FAIL] Expected 5 source files, found {source_count}")
         return False
 
-    print("[PASS] Second sync downloaded cloud files")
+    print("[PASS] Second sync downloaded destination files")
 
     # Third sync - idempotency
     print("\n[SYNC] Third sync (should do nothing)...")
@@ -879,7 +904,8 @@ def test_two_way(
 
     if stats["uploads"] != 0 or stats["downloads"] != 0:
         print(
-            f"[FAIL] Expected no actions, got uploads={stats['uploads']}, downloads={stats['downloads']}"
+            f"[FAIL] Expected no actions, got uploads={stats['uploads']}, "
+            f"downloads={stats['downloads']}"
         )
         return False
 
@@ -894,22 +920,22 @@ def main():
     print("SYNCENGINE SYNC MODE BENCHMARKS")
     print("=" * 80)
     print("\nThis benchmark tests all 5 sync modes using local filesystem operations.")
-    print("A local directory simulates cloud storage for testing purposes.\n")
+    print("A local directory simulates destination storage for testing purposes.\n")
 
     # Create unique temporary directory
     test_uuid = str(uuid.uuid4())[:8]
 
     with tempfile.TemporaryDirectory(prefix=f"syncengine_bench_{test_uuid}_") as tmp:
         base_dir = Path(tmp)
-        local_dir = base_dir / "local"
-        cloud_dir = base_dir / "cloud"
+        source_dir = base_dir / "source"
+        dest_dir = base_dir / "destination"
 
-        local_dir.mkdir(parents=True, exist_ok=True)
-        cloud_dir.mkdir(parents=True, exist_ok=True)
+        source_dir.mkdir(parents=True, exist_ok=True)
+        dest_dir.mkdir(parents=True, exist_ok=True)
 
         print(f"[INFO] Test directory: {base_dir}")
-        print(f"[INFO] Local storage: {local_dir}")
-        print(f"[INFO] Cloud storage: {cloud_dir}")
+        print(f"[INFO] Source storage: {source_dir}")
+        print(f"[INFO] Destination storage: {dest_dir}")
 
         # Create output handler
         output = DefaultOutputHandler(quiet=True)
@@ -917,24 +943,26 @@ def main():
         results = {}
 
         try:
-            # Test 1: LOCAL_BACKUP
-            results["LOCAL_BACKUP"] = test_local_backup(local_dir, cloud_dir, output)
+            # Test 1: SOURCE_BACKUP
+            results["SOURCE_BACKUP"] = test_source_backup(source_dir, dest_dir, output)
 
-            # Test 2: LOCAL_TO_CLOUD
-            results["LOCAL_TO_CLOUD"] = test_local_to_cloud(
-                local_dir, cloud_dir, output
+            # Test 2: SOURCE_TO_DESTINATION
+            results["SOURCE_TO_DESTINATION"] = test_source_to_destination(
+                source_dir, dest_dir, output
             )
 
-            # Test 3: CLOUD_BACKUP
-            results["CLOUD_BACKUP"] = test_cloud_backup(local_dir, cloud_dir, output)
+            # Test 3: DESTINATION_BACKUP
+            results["DESTINATION_BACKUP"] = test_destination_backup(
+                source_dir, dest_dir, output
+            )
 
-            # Test 4: CLOUD_TO_LOCAL
-            results["CLOUD_TO_LOCAL"] = test_cloud_to_local(
-                local_dir, cloud_dir, output
+            # Test 4: DESTINATION_TO_SOURCE
+            results["DESTINATION_TO_SOURCE"] = test_destination_to_source(
+                source_dir, dest_dir, output
             )
 
             # Test 5: TWO_WAY
-            results["TWO_WAY"] = test_two_way(local_dir, cloud_dir, output)
+            results["TWO_WAY"] = test_two_way(source_dir, dest_dir, output)
 
         except KeyboardInterrupt:
             print("\n\n[WARN] Benchmark interrupted by user")

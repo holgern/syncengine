@@ -66,7 +66,7 @@ class SyncConfig:
     """
 
     ignore_file_name: str = ".syncignore"
-    local_trash_dir_name: str = ".syncengine.trash.local"
+    local_trash_dir_name: str = ".syncengine.trash.source"
     state_dir_name: str = "syncengine"
     app_name: str = "syncengine"
 

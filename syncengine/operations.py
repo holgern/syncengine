@@ -10,8 +10,8 @@ from .constants import (
     DEFAULT_LOCAL_TRASH_DIR_NAME,
     DEFAULT_MULTIPART_THRESHOLD,
 )
-from .protocols import CloudClientProtocol
-from .scanner import LocalFile, RemoteFile
+from .protocols import StorageClientProtocol
+from .scanner import DestinationFile, SourceFile
 
 
 def get_local_trash_path(
@@ -119,18 +119,18 @@ class SyncOperations:
     """Unified operations for upload/download with common interface.
 
     This class provides a consistent API for sync operations that works
-    with any cloud client implementing the CloudClientProtocol.
+    with any cloud client implementing the StorageClientProtocol.
     """
 
     def __init__(
         self,
-        client: CloudClientProtocol,
+        client: StorageClientProtocol,
         local_trash_dir_name: str = DEFAULT_LOCAL_TRASH_DIR_NAME,
     ):
         """Initialize sync operations.
 
         Args:
-            client: Cloud API client implementing CloudClientProtocol
+            client: Cloud API client implementing StorageClientProtocol
             local_trash_dir_name: Name of the local trash directory
         """
         self.client = client
@@ -138,17 +138,17 @@ class SyncOperations:
 
     def upload_file(
         self,
-        local_file: LocalFile,
+        source_file: SourceFile,
         remote_path: str,
         storage_id: int = 0,
         chunk_size: int = DEFAULT_CHUNK_SIZE,
         multipart_threshold: int = DEFAULT_MULTIPART_THRESHOLD,
         progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> Any:
-        """Upload a local file to remote storage.
+        """Upload a source file to destination storage.
 
         Args:
-            local_file: Local file to upload
+            source_file: Source file to upload
             remote_path: Remote path (relative path for the file)
             storage_id: Storage/workspace ID
             chunk_size: Chunk size for multipart uploads
@@ -160,7 +160,7 @@ class SyncOperations:
             Upload response from API
         """
         return self.client.upload_file(
-            file_path=local_file.path,
+            file_path=source_file.path,
             relative_path=remote_path,
             storage_id=storage_id,
             chunk_size=chunk_size,
@@ -170,14 +170,14 @@ class SyncOperations:
 
     def download_file(
         self,
-        remote_file: RemoteFile,
+        destination_file: DestinationFile,
         local_path: Path,
         progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> Path:
-        """Download a remote file to local storage.
+        """Download a destination file to local storage.
 
         Args:
-            remote_file: Remote file to download
+            destination_file: Destination file to download
             local_path: Local path where file should be saved
             progress_callback: Optional progress callback
                 function(bytes_downloaded, total_bytes)
@@ -189,69 +189,69 @@ class SyncOperations:
         local_path.parent.mkdir(parents=True, exist_ok=True)
 
         return self.client.download_file(
-            hash_value=remote_file.hash,
+            hash_value=destination_file.hash,
             output_path=local_path,
             progress_callback=progress_callback,
         )
 
     def delete_remote(
         self,
-        remote_file: RemoteFile,
+        destination_file: DestinationFile,
         permanent: bool = False,
     ) -> Any:
-        """Delete a remote file.
+        """Delete a destination file.
 
         Args:
-            remote_file: Remote file to delete
+            destination_file: Destination file to delete
             permanent: If True, delete permanently; if False, move to trash
 
         Returns:
             Delete response from API
         """
         return self.client.delete_file_entries(
-            entry_ids=[remote_file.id],
+            entry_ids=[destination_file.id],
             delete_forever=permanent,
         )
 
     def delete_local(
         self,
-        local_file: LocalFile,
+        source_file: SourceFile,
         use_trash: bool = True,
         sync_root: Optional[Path] = None,
     ) -> None:
-        """Delete a local file.
+        """Delete a source file.
 
         When use_trash is True and sync_root is provided, the file is moved to
         the local trash directory at the sync root. This allows easy
         recovery of accidentally deleted files while keeping them out of sync.
 
         Args:
-            local_file: Local file to delete
+            source_file: Source file to delete
             use_trash: If True, move to local trash directory;
                 if False, delete permanently
             sync_root: Root directory of the sync operation (required for trash)
         """
         if use_trash and sync_root is not None:
             # Move to local trash directory
-            move_to_local_trash(local_file.path, sync_root, self.local_trash_dir_name)
+            move_to_local_trash(source_file.path, sync_root, self.local_trash_dir_name)
             return
 
         # Permanent delete
-        local_file.path.unlink()
+        source_file.path.unlink()
 
     def rename_local(
         self,
-        local_file: LocalFile,
+        source_file: SourceFile,
         new_relative_path: str,
         sync_root: Path,
     ) -> Path:
-        """Rename/move a local file.
+        """Rename/move a source file.
 
-        This is used when a remote rename is detected and needs to be
-        propagated to the local filesystem.
+        This is used when a destination rename is detected and needs to be
+        propagated to the source filesystem.
 
         Args:
-            local_file: Local file to rename
+            source_file: Source file to rename
             new_relative_path: New relative path for the file
             sync_root: Root directory of the sync operation
 
@@ -265,24 +265,24 @@ class SyncOperations:
         """
         # Convert forward slashes to OS-native path separators
         new_path = sync_root / Path(new_relative_path)
-        return rename_local_file(local_file.path, new_path)
+        return rename_local_file(source_file.path, new_path)
 
     def rename_remote(
         self,
-        remote_file: RemoteFile,
+        destination_file: DestinationFile,
         new_name: str,
         new_parent_id: Optional[int] = None,
     ) -> Any:
-        """Rename/move a remote file.
+        """Rename/move a destination file.
 
-        This is used when a local rename is detected and needs to be
-        propagated to the remote storage.
+        This is used when a source rename is detected and needs to be
+        propagated to the destination storage.
 
         For simple renames (same folder, different name), uses update_file_entry.
         For moves (different folder), uses move_file_entries followed by rename.
 
         Args:
-            remote_file: Remote file to rename
+            destination_file: Destination file to rename
             new_name: New name for the file (just the filename, not full path)
             new_parent_id: New parent folder ID (for moves), or None to keep same parent
 
@@ -292,12 +292,12 @@ class SyncOperations:
         # If moving to a different folder, do the move first
         if new_parent_id is not None:
             self.client.move_file_entries(
-                entry_ids=[remote_file.id],
+                entry_ids=[destination_file.id],
                 destination_id=new_parent_id,
             )
 
         # Rename the file
         return self.client.update_file_entry(
-            entry_id=remote_file.id,
+            entry_id=destination_file.id,
             name=new_name,
         )

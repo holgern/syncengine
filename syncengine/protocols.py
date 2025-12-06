@@ -1,6 +1,6 @@
-"""Protocol definitions for cloud-agnostic sync operations.
+"""Protocol definitions for storage-agnostic sync operations.
 
-This module defines the protocols (interfaces) that cloud service implementations
+This module defines the protocols (interfaces) that storage service implementations
 must adhere to in order to work with the syncengine library.
 
 The protocols use Python's typing.Protocol for structural subtyping, meaning
@@ -16,7 +16,7 @@ from typing import Any, Callable, Optional, Protocol, runtime_checkable
 
 @runtime_checkable
 class FileEntryProtocol(Protocol):
-    """Protocol for remote file entries from any cloud service.
+    """Protocol for destination file entries from any storage service.
 
     This defines the minimum attributes required for a file entry
     to be used with syncengine.
@@ -62,10 +62,10 @@ class FileEntryProtocol(Protocol):
 
 
 @runtime_checkable
-class CloudClientProtocol(Protocol):
-    """Protocol for cloud service API clients.
+class StorageClientProtocol(Protocol):
+    """Protocol for storage service API clients.
 
-    Any cloud storage client that implements these methods can be used
+    Any storage client that implements these methods can be used
     with syncengine for file synchronization.
     """
 
@@ -78,11 +78,12 @@ class CloudClientProtocol(Protocol):
         use_multipart_threshold: int = ...,
         progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> Any:
-        """Upload a local file to cloud storage.
+        """Upload a source file to destination storage.
 
         Args:
-            file_path: Local path to the file to upload
-            relative_path: Relative path in cloud storage (determines folder structure)
+            file_path: Source path to the file to upload
+            relative_path: Relative path in destination storage
+                (determines folder structure)
             storage_id: Storage/workspace identifier (0 for default/personal)
             chunk_size: Chunk size for multipart uploads (bytes)
             use_multipart_threshold: File size threshold for multipart upload
@@ -100,11 +101,11 @@ class CloudClientProtocol(Protocol):
         output_path: Path,
         progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> Path:
-        """Download a file from cloud storage.
+        """Download a file from destination storage.
 
         Args:
             hash_value: Content hash of the file to download
-            output_path: Local path where file should be saved
+            output_path: Source path where file should be saved
             progress_callback: Callback for download progress (bytes_downloaded, total)
 
         Returns:
@@ -117,7 +118,7 @@ class CloudClientProtocol(Protocol):
         entry_ids: list[int],
         delete_forever: bool = False,
     ) -> Any:
-        """Delete file entries from cloud storage.
+        """Delete file entries from destination storage.
 
         Args:
             entry_ids: List of entry IDs to delete
@@ -133,7 +134,7 @@ class CloudClientProtocol(Protocol):
         name: str,
         parent_id: Optional[int] = None,
     ) -> dict[str, Any]:
-        """Create a folder in cloud storage.
+        """Create a folder in destination storage.
 
         Args:
             name: Folder name (can include path separators for nested folders)
@@ -195,9 +196,9 @@ class CloudClientProtocol(Protocol):
 
 @runtime_checkable
 class FileEntriesManagerProtocol(Protocol):
-    """Protocol for managing file entries in cloud storage.
+    """Protocol for managing file entries in destination storage.
 
-    This provides higher-level operations for working with cloud storage,
+    This provides higher-level operations for working with storage,
     including recursive listing and folder management.
     """
 
