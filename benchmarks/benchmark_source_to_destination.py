@@ -116,7 +116,8 @@ def benchmark_source_to_destination():
         print("-" * 80)
         modified_file = source_dir / "test_file_000.txt"
         print(f"[INFO] Modifying {modified_file.name}...")
-        # Wait 2+ seconds to ensure clear timestamp difference (avoid conflict detection)
+        # Wait 2+ seconds to ensure clear timestamp difference
+        # (avoid conflict detection)
         modify_file_with_timestamp(
             modified_file, "Modified content\n" + os.urandom(10 * 1024).hex()
         )

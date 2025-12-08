@@ -96,7 +96,7 @@ class TestSourceFile:
             base_len = len(base_path_str)
 
             # Scan subdirectory
-            for dirpath, dirnames, filenames in os.walk(tmp_path):
+            for dirpath, _dirnames, filenames in os.walk(tmp_path):
                 if "test.txt" in filenames:
                     abs_path = os.path.join(dirpath, "test.txt")
                     with os.scandir(os.path.dirname(abs_path)) as entries:
@@ -663,8 +663,6 @@ class TestDirectoryScanner:
 
         # Create file and make it unreadable (Unix only)
         try:
-            import stat
-
             unreadable = tmp_path / "unreadable.txt"
             unreadable.write_text("secret")
             unreadable.chmod(0o000)

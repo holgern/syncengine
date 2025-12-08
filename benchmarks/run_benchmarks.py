@@ -10,7 +10,6 @@ import subprocess
 import sys
 import time
 from pathlib import Path
-from typing import List
 
 
 class BenchmarkResult:
@@ -55,9 +54,9 @@ class BenchmarkRunner:
         """
         self.benchmarks_dir = benchmarks_dir
         self.verbose = verbose
-        self.results: List[BenchmarkResult] = []
+        self.results: list[BenchmarkResult] = []
 
-    def discover_benchmarks(self) -> List[Path]:
+    def discover_benchmarks(self) -> list[Path]:
         """Discover all benchmark scripts in the benchmarks directory.
 
         Returns:

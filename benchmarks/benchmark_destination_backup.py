@@ -253,7 +253,8 @@ def benchmark_destination_backup():
         assert source_count == 26  # All 25 backup files + source_added_file.txt
         assert dest_count == 19  # Original 20 + 5 new - 6 deleted
         print(
-            "[✓] Local backup preserved all downloaded files despite destination deletions"
+            "[✓] Local backup preserved all downloaded files "
+            "despite destination deletions"
         )
 
         print("\n" + "=" * 80)
