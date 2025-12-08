@@ -55,13 +55,19 @@ class SyncMode(str, Enum):
             >>> SyncMode.from_string("std")
             SyncMode.SOURCE_TO_DESTINATION
         """
-        # Map of abbreviations to full names
+        # Map of abbreviations and legacy aliases to full names
         abbreviations = {
+            # Short abbreviations
             "tw": "twoWay",
             "std": "sourceToDestination",
             "sb": "sourceBackup",
             "dts": "destinationToSource",
             "db": "destinationBackup",
+            # Legacy pydrime CLI aliases (user-friendly names)
+            "localtocloud": "sourceToDestination",
+            "cloudtolocal": "destinationToSource",
+            "localbackup": "sourceBackup",
+            "cloudbackup": "destinationBackup",
         }
 
         # Normalize input

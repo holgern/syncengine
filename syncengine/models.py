@@ -78,3 +78,5 @@ class SyncConfig:
             raise ValueError("local_trash_dir_name cannot be empty")
         if not self.state_dir_name:
             raise ValueError("state_dir_name cannot be empty")
+        if not self.app_name:
+            raise ValueError("app_name cannot be empty")

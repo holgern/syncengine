@@ -38,6 +38,16 @@ class TestSyncMode:
         assert SyncMode.from_string("dts") == SyncMode.DESTINATION_TO_SOURCE
         assert SyncMode.from_string("db") == SyncMode.DESTINATION_BACKUP
 
+    def test_from_string_legacy_aliases(self):
+        """Test parsing legacy pydrime CLI aliases."""
+        assert SyncMode.from_string("localToCloud") == SyncMode.SOURCE_TO_DESTINATION
+        assert SyncMode.from_string("cloudToLocal") == SyncMode.DESTINATION_TO_SOURCE
+        assert SyncMode.from_string("localBackup") == SyncMode.SOURCE_BACKUP
+        assert SyncMode.from_string("cloudBackup") == SyncMode.DESTINATION_BACKUP
+        # Test case insensitivity
+        assert SyncMode.from_string("CLOUDBACKUP") == SyncMode.DESTINATION_BACKUP
+        assert SyncMode.from_string("LocalToCloud") == SyncMode.SOURCE_TO_DESTINATION
+
     def test_from_string_case_insensitive(self):
         """Test that parsing is case-insensitive."""
         assert SyncMode.from_string("TWOWAY") == SyncMode.TWO_WAY
@@ -96,3 +106,24 @@ class TestSyncMode:
         """Test string representation."""
         assert str(SyncMode.TWO_WAY) == "twoWay"
         assert str(SyncMode.SOURCE_TO_DESTINATION) == "sourceToDestination"
+
+    def test_repr_representation(self):
+        """Test repr representation."""
+        assert "TWO_WAY" in repr(SyncMode.TWO_WAY)
+        assert "SOURCE_TO_DESTINATION" in repr(SyncMode.SOURCE_TO_DESTINATION)
+
+    def test_equality(self):
+        """Test equality comparisons."""
+        assert SyncMode.TWO_WAY == SyncMode.TWO_WAY
+        assert SyncMode.TWO_WAY != SyncMode.SOURCE_TO_DESTINATION
+
+    def test_hash_consistency(self):
+        """Test that mode objects can be used in sets and dicts."""
+        mode_set = {SyncMode.TWO_WAY, SyncMode.SOURCE_TO_DESTINATION, SyncMode.TWO_WAY}
+        assert len(mode_set) == 2  # Duplicate TWO_WAY should be ignored
+
+        mode_dict = {
+            SyncMode.TWO_WAY: "bidirectional",
+            SyncMode.SOURCE_TO_DESTINATION: "upload only",
+        }
+        assert mode_dict[SyncMode.TWO_WAY] == "bidirectional"
