@@ -1,46 +1,67 @@
 # Syncengine Benchmarks
 
-This directory contains benchmark scripts for testing and validating the behavior of all 5 sync modes in the syncengine library.
+This directory contains benchmark scripts for testing and validating the behavior of all
+5 sync modes in the syncengine library.
 
 ## Overview
 
-The benchmark suite tests all sync modes using local filesystem operations, simulating cloud storage with a local directory. This allows for fast, repeatable testing without requiring actual cloud storage access.
+The benchmark suite tests all sync modes using local filesystem operations, simulating
+cloud storage with a local directory. This allows for fast, repeatable testing without
+requiring actual cloud storage access.
 
 ## Files
 
 ### Core Scripts
 
-- **`run_benchmarks.py`** - Main benchmark runner that executes all benchmarks and reports results
+- **`run_benchmarks.py`** - Main benchmark runner that executes all benchmarks and
+  reports results
 - **`test_utils.py`** - Shared utilities and mock classes used across all benchmarks
 
 ### Individual Mode Benchmarks
 
 - **`benchmark_two_way.py`** - Tests TWO_WAY sync mode (bidirectional mirroring)
-- **`benchmark_source_to_destination.py`** - Tests SOURCE_TO_DESTINATION mode (unidirectional upload with deletes)
+- **`benchmark_source_to_destination.py`** - Tests SOURCE_TO_DESTINATION mode
+  (unidirectional upload with deletes)
 - **`benchmark_source_backup.py`** - Tests SOURCE_BACKUP mode (upload only, no deletes)
-- **`benchmark_destination_to_source.py`** - Tests DESTINATION_TO_SOURCE mode (unidirectional download with deletes)
-- **`benchmark_destination_backup.py`** - Tests DESTINATION_BACKUP mode (download only, no deletes)
+- **`benchmark_destination_to_source.py`** - Tests DESTINATION_TO_SOURCE mode
+  (unidirectional download with deletes)
+- **`benchmark_destination_backup.py`** - Tests DESTINATION_BACKUP mode (download only,
+  no deletes)
 
 ### Combined Benchmark
 
-- **`benchmark_sync_modes.py`** - Legacy script that runs all 5 modes together in one test
+- **`benchmark_sync_modes.py`** - Legacy script that runs all 5 modes together in one
+  test
 
 ## Sync Modes
 
 ### 1. TWO_WAY
-Mirror every action in both directions. Changes from source are uploaded to destination, and changes from destination are downloaded to source. Both deletions and additions are synchronized bidirectionally.
+
+Mirror every action in both directions. Changes from source are uploaded to destination,
+and changes from destination are downloaded to source. Both deletions and additions are
+synchronized bidirectionally.
 
 ### 2. SOURCE_TO_DESTINATION
-Mirror source actions to destination, including deletions. Destination changes are ignored and never propagated back to source.
+
+Mirror source actions to destination, including deletions. Destination changes are
+ignored and never propagated back to source.
 
 ### 3. SOURCE_BACKUP
-Only upload data to the destination. Never delete anything or act on destination changes. Ideal for backup scenarios where you want to preserve everything that was ever uploaded.
+
+Only upload data to the destination. Never delete anything or act on destination
+changes. Ideal for backup scenarios where you want to preserve everything that was ever
+uploaded.
 
 ### 4. DESTINATION_TO_SOURCE
-Mirror destination actions to source, including deletions. Source changes are ignored and never propagated to destination.
+
+Mirror destination actions to source, including deletions. Source changes are ignored
+and never propagated to destination.
 
 ### 5. DESTINATION_BACKUP
-Only download data from the destination. Never delete anything at source or act on source changes. Ideal for downloading backups where you want to preserve everything locally.
+
+Only download data from the destination. Never delete anything at source or act on
+source changes. Ideal for downloading backups where you want to preserve everything
+locally.
 
 ## Usage
 

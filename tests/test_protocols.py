@@ -1,9 +1,6 @@
 """Tests for protocol implementations."""
 
-from contextlib import nullcontext
 from unittest.mock import MagicMock
-
-import pytest
 
 from syncengine.protocols import (
     DefaultOutputHandler,
@@ -239,7 +236,6 @@ class TestProtocolConformance:
 
     def test_default_output_handler_conforms(self):
         """Test DefaultOutputHandler conforms to OutputHandlerProtocol."""
-        from syncengine.protocols import OutputHandlerProtocol
 
         handler = DefaultOutputHandler()
 
@@ -267,7 +263,6 @@ class TestProtocolConformance:
 
     def test_null_spinner_factory_conforms(self):
         """Test NullSpinnerFactory conforms to SpinnerFactoryProtocol."""
-        from syncengine.protocols import SpinnerFactoryProtocol
 
         factory = NullSpinnerFactory()
 
@@ -280,7 +275,6 @@ class TestProtocolConformance:
 
     def test_null_progress_bar_factory_conforms(self):
         """Test NullProgressBarFactory conforms to ProgressBarFactoryProtocol."""
-        from syncengine.protocols import ProgressBarFactoryProtocol
 
         factory = NullProgressBarFactory()
 
@@ -294,8 +288,8 @@ class TestProtocolConformance:
 
     def test_runtime_checkable_file_entry(self):
         """Test FileEntryProtocol is runtime checkable."""
-        from syncengine.protocols import FileEntryProtocol
         from syncengine.models import FileEntry
+        from syncengine.protocols import FileEntryProtocol
 
         entry = FileEntry(id=1, type="file", name="test.txt")
 
@@ -304,7 +298,6 @@ class TestProtocolConformance:
 
     def test_runtime_checkable_storage_client(self):
         """Test StorageClientProtocol is runtime checkable."""
-        from syncengine.protocols import StorageClientProtocol
 
         # Create a mock that implements the protocol
         mock_client = MagicMock()
@@ -321,7 +314,6 @@ class TestProtocolConformance:
 
     def test_runtime_checkable_file_entries_manager(self):
         """Test FileEntriesManagerProtocol is runtime checkable."""
-        from syncengine.protocols import FileEntriesManagerProtocol
 
         # Create a mock that implements the protocol
         mock_manager = MagicMock()

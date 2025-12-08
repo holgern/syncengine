@@ -17,9 +17,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from benchmarks.test_utils import (
     LocalStorageClient,
+    count_files,
     create_entries_manager_factory,
     create_test_files,
-    count_files,
     modify_file_with_timestamp,
 )
 from syncengine.engine import SyncEngine
@@ -73,9 +73,9 @@ def benchmark_destination_to_source():
 
         print(f"[STATS] {stats}")
         print(f"[TIME] Sync completed in {elapsed:.3f}s")
-        assert stats["downloads"] == 15, (
-            f"Expected 15 downloads, got {stats['downloads']}"
-        )
+        assert (
+            stats["downloads"] == 15
+        ), f"Expected 15 downloads, got {stats['downloads']}"
         assert count_files(source_dir) == 15
         print("[✓] Successfully downloaded 15 files")
 
@@ -148,9 +148,9 @@ def benchmark_destination_to_source():
 
         print(f"[STATS] {stats}")
         print(f"[TIME] Sync completed in {elapsed:.3f}s")
-        assert stats["deletes_local"] == 1, (
-            f"Expected 1 local delete, got {stats['deletes_local']}"
-        )
+        assert (
+            stats["deletes_local"] == 1
+        ), f"Expected 1 local delete, got {stats['deletes_local']}"
         assert count_files(source_dir) == 15
         assert not (source_dir / "test_file_001.txt").exists()
         print("[✓] Successfully propagated deletion to source")
@@ -208,13 +208,13 @@ def benchmark_destination_to_source():
 
         print(f"[STATS] {stats}")
         print(f"[TIME] Sync completed in {elapsed:.3f}s")
-        assert stats["deletes_local"] == 3, (
-            f"Expected 3 local deletes, got {stats['deletes_local']}"
-        )
+        assert (
+            stats["deletes_local"] == 3
+        ), f"Expected 3 local deletes, got {stats['deletes_local']}"
         actual_count = count_files(source_dir)
-        assert actual_count == 12, (
-            f"Expected 12 files, got {actual_count}"
-        )  # 15 - 3 deletions
+        assert (
+            actual_count == 12
+        ), f"Expected 12 files, got {actual_count}"  # 15 - 3 deletions
         print("[✓] Successfully propagated 3 deletions to source")
 
         # Final verification

@@ -6,9 +6,7 @@ are uploaded to destination, and changes from destination are downloaded to sour
 Both deletions and additions are synchronized bidirectionally.
 """
 
-import hashlib
 import os
-import shutil
 import sys
 import tempfile
 import time
@@ -20,9 +18,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from benchmarks.test_utils import (
     LocalStorageClient,
+    count_files,
     create_entries_manager_factory,
     create_test_files,
-    count_files,
     modify_file_with_timestamp,
 )
 from syncengine.engine import SyncEngine
@@ -99,9 +97,9 @@ def benchmark_two_way():
 
         print(f"[STATS] {stats}")
         print(f"[TIME] Sync completed in {elapsed:.3f}s")
-        assert stats["downloads"] == 5, (
-            f"Expected 5 downloads, got {stats['downloads']}"
-        )
+        assert (
+            stats["downloads"] == 5
+        ), f"Expected 5 downloads, got {stats['downloads']}"
         assert count_files(source_dir) == 15
         print("[✓] Successfully downloaded 5 files from destination")
 
@@ -154,9 +152,9 @@ def benchmark_two_way():
 
         print(f"[STATS] {stats}")
         print(f"[TIME] Sync completed in {elapsed:.3f}s")
-        assert stats["deletes_local"] == 1, (
-            f"Expected 1 local delete, got {stats['deletes_local']}"
-        )
+        assert (
+            stats["deletes_local"] == 1
+        ), f"Expected 1 local delete, got {stats['deletes_local']}"
         assert count_files(source_dir) == 14
         print("[✓] Successfully propagated deletion to source")
 
@@ -175,9 +173,9 @@ def benchmark_two_way():
 
         print(f"[STATS] {stats}")
         print(f"[TIME] Sync completed in {elapsed:.3f}s")
-        assert stats["deletes_remote"] == 1, (
-            f"Expected 1 remote delete, got {stats['deletes_remote']}"
-        )
+        assert (
+            stats["deletes_remote"] == 1
+        ), f"Expected 1 remote delete, got {stats['deletes_remote']}"
         assert count_files(dest_storage) == 13
         print("[✓] Successfully propagated deletion to destination")
 

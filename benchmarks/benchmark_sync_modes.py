@@ -25,11 +25,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 # Import utility classes and functions from test_utils module
 from benchmarks.test_utils import (
     LocalStorageClient,
-    LocalEntriesManager,
-    LocalFileEntry,
+    count_files,
     create_entries_manager_factory,
     create_test_files,
-    count_files,
 )
 from syncengine.engine import SyncEngine
 from syncengine.modes import SyncMode

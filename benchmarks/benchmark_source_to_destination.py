@@ -17,9 +17,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from benchmarks.test_utils import (
     LocalStorageClient,
+    count_files,
     create_entries_manager_factory,
     create_test_files,
-    count_files,
     modify_file_with_timestamp,
 )
 from syncengine.engine import SyncEngine
@@ -146,9 +146,9 @@ def benchmark_source_to_destination():
 
         print(f"[STATS] {stats}")
         print(f"[TIME] Sync completed in {elapsed:.3f}s")
-        assert stats["deletes_remote"] == 1, (
-            f"Expected 1 remote delete, got {stats['deletes_remote']}"
-        )
+        assert (
+            stats["deletes_remote"] == 1
+        ), f"Expected 1 remote delete, got {stats['deletes_remote']}"
         assert count_files(dest_storage) == 15
         print("[✓] Successfully propagated deletion to destination")
 
@@ -167,9 +167,9 @@ def benchmark_source_to_destination():
 
         print(f"[STATS] {stats}")
         print(f"[TIME] Sync completed in {elapsed:.3f}s")
-        assert stats["downloads"] == 0, (
-            f"Expected 0 downloads, got {stats['downloads']}"
-        )
+        assert (
+            stats["downloads"] == 0
+        ), f"Expected 0 downloads, got {stats['downloads']}"
         assert not (source_dir / "dest_only_file.txt").exists()
         print("[✓] Destination changes correctly ignored")
 

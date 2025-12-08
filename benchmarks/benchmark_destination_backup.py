@@ -18,9 +18,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from benchmarks.test_utils import (
     LocalStorageClient,
+    count_files,
     create_entries_manager_factory,
     create_test_files,
-    count_files,
     modify_file_with_timestamp,
 )
 from syncengine.engine import SyncEngine
@@ -74,9 +74,9 @@ def benchmark_destination_backup():
 
         print(f"[STATS] {stats}")
         print(f"[TIME] Sync completed in {elapsed:.3f}s")
-        assert stats["downloads"] == 20, (
-            f"Expected 20 downloads, got {stats['downloads']}"
-        )
+        assert (
+            stats["downloads"] == 20
+        ), f"Expected 20 downloads, got {stats['downloads']}"
         assert count_files(source_dir) == 20
         print("[✓] Successfully downloaded 20 backup files")
 
@@ -110,9 +110,9 @@ def benchmark_destination_backup():
 
         print(f"[STATS] {stats}")
         print(f"[TIME] Sync completed in {elapsed:.3f}s")
-        assert stats["downloads"] == 5, (
-            f"Expected 5 downloads, got {stats['downloads']}"
-        )
+        assert (
+            stats["downloads"] == 5
+        ), f"Expected 5 downloads, got {stats['downloads']}"
         assert count_files(source_dir) == 25
         print("[✓] Successfully downloaded 5 new backup files")
 
@@ -151,9 +151,9 @@ def benchmark_destination_backup():
 
         print(f"[STATS] {stats}")
         print(f"[TIME] Sync completed in {elapsed:.3f}s")
-        assert stats["deletes_local"] == 0, (
-            f"Expected 0 local deletes, got {stats['deletes_local']}"
-        )
+        assert (
+            stats["deletes_local"] == 0
+        ), f"Expected 0 local deletes, got {stats['deletes_local']}"
         assert count_files(source_dir) == 25  # File still exists in local backup
         assert (source_dir / "test_file_001.txt").exists()
         print("[✓] Local backup correctly preserved - file NOT deleted from source")
@@ -236,9 +236,9 @@ def benchmark_destination_backup():
         print(f"[STATS] {stats}")
         print(f"[TIME] Sync completed in {elapsed:.3f}s")
         # In DESTINATION_BACKUP mode, source modifications are ignored
-        assert stats["downloads"] == 0, (
-            f"Expected 0 downloads, got {stats['downloads']}"
-        )
+        assert (
+            stats["downloads"] == 0
+        ), f"Expected 0 downloads, got {stats['downloads']}"
         assert stats["uploads"] == 0, f"Expected 0 uploads, got {stats['uploads']}"
         print("[✓] Source modification correctly ignored in backup mode")
 

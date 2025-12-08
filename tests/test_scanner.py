@@ -1,10 +1,6 @@
 """Tests for scanner module."""
 
 import os
-import tempfile
-from datetime import datetime
-from pathlib import Path
-from unittest.mock import MagicMock, Mock
 
 import pytest
 
@@ -372,6 +368,7 @@ class TestDirectoryScanner:
     def test_scan_destination(self):
         """Test scan_destination processes entries correctly."""
         from typing import cast
+
         from syncengine.protocols import FileEntryProtocol
 
         scanner = DirectoryScanner()

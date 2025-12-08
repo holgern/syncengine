@@ -18,9 +18,9 @@ sys.path.insert(0, str(Path(__file__).parent.parent))
 
 from benchmarks.test_utils import (
     LocalStorageClient,
+    count_files,
     create_entries_manager_factory,
     create_test_files,
-    count_files,
     modify_file_with_timestamp,
 )
 from syncengine.engine import SyncEngine
@@ -119,8 +119,7 @@ def benchmark_source_backup():
         modified_file = source_dir / "test_file_000.txt"
         print(f"[INFO] Modifying {modified_file.name}...")
         modify_file_with_timestamp(
-            modified_file,
-            "Modified backup content\n" + os.urandom(5 * 1024).hex()
+            modified_file, "Modified backup content\n" + os.urandom(5 * 1024).hex()
         )
 
         print("\n[SYNC] Syncing to upload modified file...")
@@ -148,9 +147,9 @@ def benchmark_source_backup():
 
         print(f"[STATS] {stats}")
         print(f"[TIME] Sync completed in {elapsed:.3f}s")
-        assert stats["deletes_remote"] == 0, (
-            f"Expected 0 remote deletes, got {stats['deletes_remote']}"
-        )
+        assert (
+            stats["deletes_remote"] == 0
+        ), f"Expected 0 remote deletes, got {stats['deletes_remote']}"
         assert count_files(dest_storage) == 25  # File still exists in backup
         assert (dest_storage / "test_file_001.txt").exists()
         print("[✓] Backup correctly preserved - file NOT deleted from destination")

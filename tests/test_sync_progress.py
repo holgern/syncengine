@@ -3,10 +3,7 @@
 import threading
 from unittest.mock import MagicMock
 
-import pytest
-
 from syncengine.progress import (
-    SyncProgressCallback,
     SyncProgressEvent,
     SyncProgressInfo,
     SyncProgressTracker,
