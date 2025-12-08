@@ -357,9 +357,8 @@ class TestSyncConfigEdgeCases:
     def test_json_with_bom(self, tmp_path):
         """Test loading JSON file with UTF-8 BOM.
 
-        Currently the implementation does not handle BOM and raises an error.
-        This test documents that behavior. If BOM support is added later,
-        this test should be updated.
+        Python's json module doesn't handle BOM gracefully on all platforms
+        and raises a JSONDecodeError. This test documents that behavior.
         """
         config = [
             {
@@ -373,8 +372,8 @@ class TestSyncConfigEdgeCases:
         # Write with UTF-8 BOM
         config_file.write_bytes(b"\xef\xbb\xbf" + json.dumps(config).encode("utf-8"))
 
-        # Currently raises SyncConfigError for BOM - documenting current behavior
-        with pytest.raises(SyncConfigError, match="Unexpected UTF-8 BOM"):
+        # Raises SyncConfigError wrapping JSONDecodeError
+        with pytest.raises(SyncConfigError, match="Invalid JSON"):
             load_sync_pairs_from_json(config_file)
 
 

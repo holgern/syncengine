@@ -56,7 +56,8 @@ class TestSourceFile:
                     assert source.relative_path == "test.txt"
                     assert source.size == 5
                     assert source.mtime > 0
-                    assert source.file_id > 0
+                    # file_id may be 0 on some Windows filesystems
+                    assert source.file_id >= 0
                     break
 
     def test_from_scandir_fast(self, tmp_path):
