@@ -27,7 +27,8 @@ class TestSourceFile:
         assert source.relative_path == "test.txt"
         assert source.size == 11
         assert source.mtime > 0
-        assert source.file_id > 0
+        # file_id may be 0 on some Windows filesystems
+        assert source.file_id >= 0
 
     def test_from_path_with_subdirectory(self, tmp_path):
         """Test from_path with nested directory."""
@@ -652,7 +653,8 @@ class TestDirectoryScanner:
         assert len(files) == 1
         assert files[0].size >= 0
         assert files[0].mtime > 0
-        assert files[0].file_id > 0
+        # file_id may be 0 on some Windows filesystems
+        assert files[0].file_id >= 0
 
     def test_scan_source_mixed_readable_unreadable(self, tmp_path):
         """Test scanning with mix of readable and permission-denied files."""
