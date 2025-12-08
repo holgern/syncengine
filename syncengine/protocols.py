@@ -133,12 +133,14 @@ class StorageClientProtocol(Protocol):
         self,
         name: str,
         parent_id: Optional[int] = None,
+        storage_id: int = 0,
     ) -> dict[str, Any]:
         """Create a folder in destination storage.
 
         Args:
             name: Folder name (can include path separators for nested folders)
             parent_id: Parent folder ID (None for root)
+            storage_id: Storage/workspace identifier (0 for default/personal)
 
         Returns:
             Dictionary with at least 'status' and 'id' keys

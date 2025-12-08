@@ -800,7 +800,9 @@ class SyncEngine:
         if not dry_run and remote_folder_id is None:
             try:
                 result = self.client.create_folder(
-                    name=effective_folder_name, parent_id=None
+                    name=effective_folder_name,
+                    parent_id=None,
+                    storage_id=pair.storage_id,
                 )
                 if result.get("status") == "success":
                     remote_folder_id = result.get("id")
@@ -2877,7 +2879,9 @@ class SyncEngine:
 
                 # Create the folder
                 result = self.client.create_folder(
-                    name=folder_name, parent_id=parent_id
+                    name=folder_name,
+                    parent_id=parent_id,
+                    storage_id=pair.storage_id,
                 )
                 if result.get("status") == "success":
                     logger.debug(f"Created folder: {folder_path}")

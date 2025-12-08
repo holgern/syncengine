@@ -196,12 +196,14 @@ class LocalStorageClient:
         self,
         name: str,
         parent_id: Optional[int] = None,
+        storage_id: int = 0,
     ) -> dict[str, Any]:
         """Create a folder in simulated cloud storage.
 
         Args:
             name: Folder name (can include path separators)
             parent_id: Parent folder ID (ignored, we use full paths)
+            storage_id: Storage identifier (ignored in mock)
 
         Returns:
             Dictionary with status and id
