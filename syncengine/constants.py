@@ -60,6 +60,8 @@ def format_size(size_bytes: int) -> str:
     size_float = float(size_bytes)
     for unit in ["B", "KB", "MB", "GB", "TB", "PB"]:
         if abs(size_float) < 1024.0:
+            if unit == "B":
+                return f"{int(size_float)} {unit}"
             return f"{size_float:.2f} {unit}"
         size_float /= 1024.0
 
