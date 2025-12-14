@@ -56,22 +56,22 @@ Example results::
    TWO_WAY Sync Benchmark
    =====================
    Files: 100 (avg size: 1MB)
-   
+
    Initial sync:
      Time: 2.34s
      Uploaded: 100 files (100MB)
      Downloaded: 0 files
-   
+
    Modify 10 files at source:
      Time: 0.45s
      Uploaded: 10 files (10MB)
      Downloaded: 0 files
-   
+
    Modify 10 files at destination:
      Time: 0.47s
      Uploaded: 0 files
      Downloaded: 10 files (10MB)
-   
+
    Modify 5 files at both sides (conflicts):
      Time: 0.28s
      Conflicts resolved: 5
@@ -91,19 +91,19 @@ Example results::
    SOURCE_TO_DESTINATION Sync Benchmark
    ===================================
    Files: 100 (avg size: 1MB)
-   
+
    Initial sync:
      Time: 2.31s
      Uploaded: 100 files (100MB)
-   
+
    Add 10 files at source:
      Time: 0.43s
      Uploaded: 10 files (10MB)
-   
+
    Add 10 files at destination:
      Time: 0.19s
      Deleted: 10 files (not in source)
-   
+
    Delete 10 files at source:
      Time: 0.15s
      Deleted: 10 files (at destination)
@@ -122,19 +122,19 @@ Example results::
    SOURCE_BACKUP Sync Benchmark
    ============================
    Files: 100 (avg size: 1MB)
-   
+
    Initial sync:
      Time: 2.35s
      Uploaded: 100 files (100MB)
-   
+
    Delete 10 files at source:
      Time: 0.05s
      Deleted: 0 files (backup preserved)
-   
+
    Modify 10 files at source:
      Time: 0.44s
      Uploaded: 10 files (10MB)
-   
+
    Destination size after deletes:
      Files: 100 (backup preserved)
 
@@ -152,15 +152,15 @@ Example results::
    DESTINATION_TO_SOURCE Sync Benchmark
    ===================================
    Files: 100 (avg size: 1MB)
-   
+
    Initial sync:
      Time: 2.33s
      Downloaded: 100 files (100MB)
-   
+
    Add 10 files at destination:
      Time: 0.42s
      Downloaded: 10 files (10MB)
-   
+
    Add 10 files at source:
      Time: 0.18s
      Deleted: 10 files (not in destination)
@@ -179,15 +179,15 @@ Example results::
    DESTINATION_BACKUP Sync Benchmark
    ================================
    Files: 100 (avg size: 1MB)
-   
+
    Initial sync:
      Time: 2.36s
      Downloaded: 100 files (100MB)
-   
+
    Delete 10 files at destination:
      Time: 0.05s
      Deleted: 0 files (backup preserved)
-   
+
    Modify 10 files at destination:
      Time: 0.45s
      Downloaded: 10 files (10MB)
@@ -206,15 +206,15 @@ Example results::
    Sync Modes Comparison
    =====================
    Test: 100 files (1MB each), modify 10 at source
-   
+
    TWO_WAY:              0.45s (10 uploads)
    SOURCE_TO_DEST:       0.44s (10 uploads)
    SOURCE_BACKUP:        0.46s (10 uploads)
    DEST_TO_SOURCE:       0.05s (0 operations)
    DEST_BACKUP:          0.05s (0 operations)
-   
+
    Test: 100 files (1MB each), modify 10 at destination
-   
+
    TWO_WAY:              0.47s (10 downloads)
    SOURCE_TO_DEST:       0.18s (10 deletes)
    SOURCE_BACKUP:        0.48s (10 downloads)
@@ -239,13 +239,13 @@ Example metrics output::
    Performance Metrics
    ===================
    Total time: 5.23s
-   
+
    Operations:
      Uploads: 100 (2.34s, 42.7 MB/s)
      Downloads: 50 (1.12s, 44.6 MB/s)
      Deletes: 20 (0.08s, 250 ops/s)
      Renames: 10 (0.05s, 200 ops/s)
-   
+
    Efficiency:
      Time per upload: 23.4ms
      Time per download: 22.4ms
@@ -269,7 +269,7 @@ Expected results::
    ================
    Files: 10,000 (10KB each)
    Total size: 100MB
-   
+
    Initial sync: 8.45s (11.8 MB/s)
    Incremental sync (100 changes): 0.89s
 
@@ -285,7 +285,7 @@ Expected results::
    ================
    Files: 10 (100MB each)
    Total size: 1GB
-   
+
    Initial sync: 23.4s (42.7 MB/s)
    Incremental sync (1 change): 2.3s
 
@@ -301,7 +301,7 @@ Expected results::
    ================
    Files: 1,000 (10KB to 10MB, avg 500KB)
    Total size: 500MB
-   
+
    Initial sync: 12.3s (40.7 MB/s)
    Incremental sync (50 changes): 1.2s
 
@@ -319,13 +319,13 @@ Results::
    Concurrency Test
    ================
    Files: 100 (1MB each)
-   
+
    Transfers=1:   4.56s (21.9 MB/s)
    Transfers=3:   2.34s (42.7 MB/s)
    Transfers=5:   1.89s (52.9 MB/s)
    Transfers=10:  1.92s (52.1 MB/s)
    Transfers=20:  2.01s (49.8 MB/s)
-   
+
    Optimal concurrency: 5-10 transfers
 
 Interpretation
@@ -380,31 +380,31 @@ Run benchmarks in CI to detect performance regressions:
 
    # .github/workflows/benchmarks.yml
    name: Benchmarks
-   
+
    on:
      pull_request:
        branches: [main]
-   
+
    jobs:
      benchmark:
        runs-on: ubuntu-latest
        steps:
          - uses: actions/checkout@v2
-         
+
          - name: Set up Python
            uses: actions/setup-python@v2
            with:
              python-version: 3.9
-         
+
          - name: Install dependencies
            run: |
              pip install -e .
              pip install pytest-benchmark
-         
+
          - name: Run benchmarks
            run: |
              python benchmarks/run_benchmarks.py --output results.json
-         
+
          - name: Compare results
            run: |
              python benchmarks/compare_results.py \
@@ -429,24 +429,24 @@ Create your own benchmarks for specific use cases:
 
    def benchmark_custom_scenario():
        """Custom benchmark for specific scenario."""
-       
+
        # Setup
        source_dir = Path("/tmp/bench_source")
        dest_dir = Path("/tmp/bench_dest")
-       
+
        # Create test data
        create_test_files(
            source_dir,
            num_files=100,
            file_size=1024*1024  # 1MB
        )
-       
+
        # Create sync engine
        engine = SyncEngine(
            client=dest_client,
            entries_manager_factory=create_entries_manager
        )
-       
+
        pair = SyncPair(
            source_root=str(source_dir),
            destination_root=str(dest_dir),
@@ -454,11 +454,11 @@ Create your own benchmarks for specific use cases:
            destination_client=dest_client,
            mode=SyncMode.TWO_WAY
        )
-       
+
        # Benchmark
        with measure_time() as timer:
            stats = engine.sync_pair(pair)
-       
+
        # Report
        print(f"Time: {timer.elapsed:.2f}s")
        print(f"Throughput: {100 / timer.elapsed:.1f} files/s")

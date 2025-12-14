@@ -9,7 +9,7 @@ File State and Change Detection
 SyncEngine maintains three views of your files:
 
 1. **Source State**: Current files in the source location
-2. **Destination State**: Current files in the destination location  
+2. **Destination State**: Current files in the destination location
 3. **Last Known State**: Files as they were during the last sync
 
 By comparing these three states, SyncEngine can determine what happened to each file:
@@ -124,10 +124,10 @@ Example:
    # Before sync:
    # Source: /docs/report.pdf (hash: abc123)
    # Destination: /docs/report.pdf (hash: abc123)
-   
+
    # User renames at source:
    # Source: /docs/annual_report_2024.pdf (hash: abc123)
-   
+
    # After sync with rename detection:
    # Source: /docs/annual_report_2024.pdf (hash: abc123)
    # Destination: /docs/annual_report_2024.pdf (hash: abc123)
@@ -148,7 +148,7 @@ The file with the most recent modification time wins:
 .. code-block:: python
 
    from syncengine import ConflictResolution
-   
+
    pair = SyncPair(
        ...,
        conflict_resolution=ConflictResolution.NEWEST_WINS
@@ -188,7 +188,7 @@ Conflicts are reported but not resolved automatically:
        print(f"Destination modified: {conflict_info.dest_mtime}")
        # Return 'source', 'destination', or 'skip'
        return 'source'
-   
+
    pair = SyncPair(
        ...,
        conflict_resolution=ConflictResolution.MANUAL,
@@ -204,7 +204,7 @@ Pattern Syntax
 ~~~~~~~~~~~~~~
 
 * ``*.tmp`` - Ignore all .tmp files
-* ``*.log`` - Ignore all .log files  
+* ``*.log`` - Ignore all .log files
 * ``/build/`` - Ignore build directory at root
 * ``build/`` - Ignore all build directories
 * ``**/node_modules/`` - Ignore node_modules anywhere
@@ -222,24 +222,24 @@ Create a ``.syncignore`` file in your source root:
    # Ignore compiled Python files
    *.pyc
    __pycache__/
-   
+
    # Ignore OS files
    .DS_Store
    Thumbs.db
-   
+
    # Ignore development files
    .vscode/
    .idea/
    *.swp
-   
+
    # Ignore build artifacts
    build/
    dist/
    *.egg-info/
-   
+
    # Ignore logs
    *.log
-   
+
    # But keep important logs
    !critical.log
 
@@ -249,20 +249,20 @@ Using Ignore Patterns Programmatically
 .. code-block:: python
 
    from syncengine import IgnoreFileManager
-   
+
    ignore_manager = IgnoreFileManager()
-   
+
    # Add individual patterns
    ignore_manager.add_pattern("*.tmp")
    ignore_manager.add_pattern("*.log")
-   
+
    # Load from file
    ignore_manager.load_from_file(".syncignore")
-   
+
    # Check if path should be ignored
    if ignore_manager.should_ignore("test.tmp"):
        print("File is ignored")
-   
+
    # Use with sync pair
    pair = SyncPair(
        ...,
@@ -324,18 +324,18 @@ State Manager API
 .. code-block:: python
 
    from syncengine import SyncStateManager
-   
+
    # Create state manager
    state_manager = SyncStateManager("/path/to/.sync_state")
-   
+
    # Load previous state
    source_tree = state_manager.load_source_tree()
    dest_tree = state_manager.load_destination_tree()
-   
+
    # Save new state after sync
    state_manager.save_source_tree(new_source_tree)
    state_manager.save_destination_tree(new_dest_tree)
-   
+
    # Clear state (force full resync)
    state_manager.clear()
 
@@ -355,7 +355,7 @@ SyncEngine uses two types of concurrency limits:
 .. code-block:: python
 
    from syncengine import ConcurrencyLimits
-   
+
    limits = ConcurrencyLimits(
        transfers=5,      # Max 5 concurrent uploads/downloads
        operations=10     # Max 10 concurrent file operations
@@ -397,33 +397,33 @@ Basic Usage
 
    from syncengine import SyncPauseController
    import threading
-   
+
    controller = SyncPauseController()
    engine = SyncEngine(
        ...,
        pause_controller=controller
    )
-   
+
    # Start sync in background
    def run_sync():
        stats = engine.sync_pair(pair)
        print(f"Sync complete: {stats}")
-   
+
    sync_thread = threading.Thread(target=run_sync)
    sync_thread.start()
-   
+
    # Pause sync
    controller.pause()
    print("Sync paused")
-   
+
    # Resume sync
    controller.resume()
    print("Sync resumed")
-   
+
    # Cancel sync
    controller.cancel()
    print("Sync cancelled")
-   
+
    sync_thread.join()
 
 Pause Behavior
@@ -476,19 +476,19 @@ Progress Callback
 .. code-block:: python
 
    from syncengine import SyncProgressTracker, SyncProgressEvent
-   
+
    def on_progress(event: SyncProgressEvent):
        if event.type == "upload_progress":
            percent = (event.bytes_transferred / event.total_bytes) * 100
            print(f"Uploading {event.file_path}: {percent:.1f}%")
-       
+
        elif event.type == "download_progress":
            percent = (event.bytes_transferred / event.total_bytes) * 100
            print(f"Downloading {event.file_path}: {percent:.1f}%")
-       
+
        elif event.type == "sync_complete":
            print(f"Sync complete: {event.stats}")
-   
+
    tracker = SyncProgressTracker(callback=on_progress)
    engine = SyncEngine(
        ...,
@@ -507,22 +507,22 @@ You can build custom progress UIs using the progress callbacks:
            self.current_file = None
            self.total_files = 0
            self.completed_files = 0
-       
+
        def on_progress(self, event: SyncProgressEvent):
            if event.type == "sync_start":
                self.total_files = event.total_files
                print(f"Starting sync of {self.total_files} files")
-           
+
            elif event.type == "upload_start":
                self.current_file = event.file_path
                print(f"Uploading: {self.current_file}")
-           
+
            elif event.type == "upload_complete":
                self.completed_files += 1
                print(f"Completed {self.completed_files}/{self.total_files}")
-           
+
            # ... handle other events
-   
+
    ui = ProgressUI()
    tracker = SyncProgressTracker(callback=ui.on_progress)
 

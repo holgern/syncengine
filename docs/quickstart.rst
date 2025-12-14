@@ -42,7 +42,7 @@ The simplest way to use SyncEngine is with local filesystem synchronization:
 
    # Perform synchronization
    stats = engine.sync_pair(pair)
-   
+
    # Print results
    print(f"Uploaded: {stats['uploads']}")
    print(f"Downloaded: {stats['downloads']}")
@@ -139,15 +139,15 @@ Exclude files from sync using gitignore-style patterns:
 
    # Create ignore manager
    ignore_manager = IgnoreFileManager()
-   
+
    # Add patterns
    ignore_manager.add_pattern("*.tmp")
    ignore_manager.add_pattern(".git/")
    ignore_manager.add_pattern("node_modules/")
-   
+
    # Or load from a .syncignore file
    ignore_manager.load_from_file("/home/user/docs/.syncignore")
-   
+
    # Use with sync pair
    pair = SyncPair(
        source_root="/home/user/docs",
@@ -177,7 +177,7 @@ Monitor sync progress with callbacks:
 
    # Create progress tracker
    tracker = SyncProgressTracker(callback=on_progress)
-   
+
    # Use with engine
    engine = SyncEngine(
        client=dest_client,
@@ -196,17 +196,17 @@ SyncEngine automatically tracks state to enable efficient incremental syncs:
 
    # State is stored in .sync_state directory by default
    state_manager = SyncStateManager("/home/user/docs/.sync_state")
-   
+
    # Use with engine
    engine = SyncEngine(
        client=dest_client,
        entries_manager_factory=lambda c, sid: FileEntriesManager(c),
        state_manager=state_manager
    )
-   
+
    # First sync - compares all files
    stats = engine.sync_pair(pair)
-   
+
    # Second sync - only processes changes since last sync
    stats = engine.sync_pair(pair)  # Much faster!
 
@@ -224,7 +224,7 @@ Control how many concurrent operations are allowed:
        transfers=5,      # Max 5 concurrent uploads/downloads
        operations=10     # Max 10 concurrent file operations
    )
-   
+
    engine = SyncEngine(
        client=dest_client,
        entries_manager_factory=lambda c, sid: FileEntriesManager(c),
@@ -241,24 +241,24 @@ Control sync execution:
    from syncengine import SyncPauseController
 
    controller = SyncPauseController()
-   
+
    engine = SyncEngine(
        client=dest_client,
        entries_manager_factory=lambda c, sid: FileEntriesManager(c),
        pause_controller=controller
    )
-   
+
    # Start sync in background thread
    import threading
    sync_thread = threading.Thread(target=engine.sync_pair, args=(pair,))
    sync_thread.start()
-   
+
    # Pause sync
    controller.pause()
-   
+
    # Resume sync
    controller.resume()
-   
+
    # Cancel sync
    controller.cancel()
 
@@ -270,7 +270,7 @@ Handle errors gracefully:
 .. code-block:: python
 
    from syncengine import SyncEngine, SyncConfigError
-   
+
    try:
        stats = engine.sync_pair(pair)
    except SyncConfigError as e:
@@ -301,7 +301,7 @@ To sync with cloud storage, implement the ``StorageClientProtocol``:
        ) -> Any:
            # Implement upload logic
            pass
-       
+
        def download_file(
            self,
            hash_value: str,
@@ -310,7 +310,7 @@ To sync with cloud storage, implement the ``StorageClientProtocol``:
        ) -> Path:
            # Implement download logic
            pass
-       
+
        # ... implement other required methods
 
    # Use your custom client

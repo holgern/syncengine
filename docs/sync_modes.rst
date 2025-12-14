@@ -62,7 +62,7 @@ Example
 .. code-block:: python
 
    from syncengine import SyncEngine, SyncMode, SyncPair
-   
+
    pair = SyncPair(
        source_root="/home/user/documents",
        destination_root="/cloud/documents",
@@ -70,7 +70,7 @@ Example
        destination_client=cloud_client,
        mode=SyncMode.TWO_WAY
    )
-   
+
    stats = engine.sync_pair(pair)
 
 Scenarios
@@ -130,7 +130,7 @@ Example
 .. code-block:: python
 
    from syncengine import SyncMode, SyncPair
-   
+
    pair = SyncPair(
        source_root="/home/user/website",
        destination_root="/var/www/html",
@@ -138,7 +138,7 @@ Example
        destination_client=remote_client,
        mode=SyncMode.SOURCE_TO_DESTINATION
    )
-   
+
    stats = engine.sync_pair(pair)
 
 Scenarios
@@ -194,7 +194,7 @@ Example
 .. code-block:: python
 
    from syncengine import SyncMode, SyncPair
-   
+
    pair = SyncPair(
        source_root="/home/user/photos",
        destination_root="/backup/photos",
@@ -202,7 +202,7 @@ Example
        destination_client=backup_client,
        mode=SyncMode.SOURCE_BACKUP
    )
-   
+
    stats = engine.sync_pair(pair)
 
 Scenarios
@@ -266,7 +266,7 @@ Example
 .. code-block:: python
 
    from syncengine import SyncMode, SyncPair
-   
+
    pair = SyncPair(
        source_root="/home/user/downloads",
        destination_root="/cloud/shared_files",
@@ -274,7 +274,7 @@ Example
        destination_client=cloud_client,
        mode=SyncMode.DESTINATION_TO_SOURCE
    )
-   
+
    stats = engine.sync_pair(pair)
 
 Scenarios
@@ -337,7 +337,7 @@ Example
 .. code-block:: python
 
    from syncengine import SyncMode, SyncPair
-   
+
    pair = SyncPair(
        source_root="/home/user/backup",
        destination_root="/cloud/important_data",
@@ -345,7 +345,7 @@ Example
        destination_client=cloud_client,
        mode=SyncMode.DESTINATION_BACKUP
    )
-   
+
    stats = engine.sync_pair(pair)
 
 Scenarios
@@ -435,16 +435,16 @@ You can check mode properties programmatically:
 .. code-block:: python
 
    from syncengine import SyncMode
-   
+
    mode = SyncMode.TWO_WAY
-   
+
    # Check capabilities
    print(f"Allows upload: {mode.allows_upload}")
    print(f"Allows download: {mode.allows_download}")
    print(f"Allows source delete: {mode.allows_source_delete}")
    print(f"Allows dest delete: {mode.allows_destination_delete}")
    print(f"Is bidirectional: {mode.is_bidirectional}")
-   
+
    # Check scan requirements
    print(f"Requires source scan: {mode.requires_source_scan}")
    print(f"Requires dest scan: {mode.requires_destination_scan}")
@@ -457,23 +457,23 @@ SyncEngine supports friendly aliases for modes:
 .. code-block:: python
 
    from syncengine import SyncMode
-   
+
    # These are equivalent:
    mode = SyncMode.from_string("twoWay")
    mode = SyncMode.from_string("tw")
-   
+
    mode = SyncMode.from_string("sourceToDestination")
    mode = SyncMode.from_string("std")
    mode = SyncMode.from_string("localtocloud")
-   
+
    mode = SyncMode.from_string("destinationToSource")
    mode = SyncMode.from_string("dts")
    mode = SyncMode.from_string("cloudtolocal")
-   
+
    mode = SyncMode.from_string("sourceBackup")
    mode = SyncMode.from_string("sb")
    mode = SyncMode.from_string("localbackup")
-   
+
    mode = SyncMode.from_string("destinationBackup")
    mode = SyncMode.from_string("db")
    mode = SyncMode.from_string("cloudbackup")

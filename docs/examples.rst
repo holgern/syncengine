@@ -24,27 +24,27 @@ The most basic usage - keep two directories in sync:
 
    def simple_two_way_sync():
        """Simple two-way sync between two local directories."""
-       
+
        # Create storage clients
        source_client = LocalStorageClient()
        dest_client = LocalStorageClient()
-       
+
        # Create state manager
        state_manager = SyncStateManager(
            Path("/home/user/documents/.sync_state")
        )
-       
+
        # Create entries manager factory
        def create_entries_manager(client, storage_id):
            return LocalEntriesManager(client)
-       
+
        # Create sync engine
        engine = SyncEngine(
            client=dest_client,
            entries_manager_factory=create_entries_manager,
            state_manager=state_manager
        )
-       
+
        # Create sync pair
        pair = SyncPair(
            source_root="/home/user/documents",
@@ -53,10 +53,10 @@ The most basic usage - keep two directories in sync:
            destination_client=dest_client,
            mode=SyncMode.TWO_WAY
        )
-       
+
        # Perform sync
        stats = engine.sync_pair(pair)
-       
+
        # Print results
        print(f"Sync complete!")
        print(f"  Uploaded: {stats['uploads']}")
@@ -85,28 +85,28 @@ Backup files to cloud without deleting:
 
    def backup_to_cloud():
        """One-way backup to cloud, never deleting from cloud."""
-       
+
        # Create storage clients
        local_client = LocalStorageClient()
        cloud_client = MyCloudStorageClient()  # Your cloud implementation
-       
+
        # Create ignore manager
        ignore_manager = IgnoreFileManager()
        ignore_manager.load_from_file(Path("/home/user/photos/.syncignore"))
-       
+
        # Add additional patterns
        ignore_manager.add_pattern("*.tmp")
        ignore_manager.add_pattern(".DS_Store")
-       
+
        # Create sync engine
        def create_entries_manager(client, storage_id):
            return CloudEntriesManager(client, storage_id)
-       
+
        engine = SyncEngine(
            client=cloud_client,
            entries_manager_factory=create_entries_manager
        )
-       
+
        # Create sync pair with SOURCE_BACKUP mode
        pair = SyncPair(
            source_root="/home/user/photos",
@@ -116,10 +116,10 @@ Backup files to cloud without deleting:
            mode=SyncMode.SOURCE_BACKUP,
            ignore_manager=ignore_manager
        )
-       
+
        # Perform backup
        stats = engine.sync_pair(pair)
-       
+
        print(f"Backup complete!")
        print(f"  Files uploaded: {stats['uploads']}")
        print(f"  Files skipped: {stats.get('skipped', 0)}")
@@ -149,7 +149,7 @@ Monitor sync progress with a rich terminal UI:
 
    class RichProgressUI:
        """Rich terminal UI for sync progress."""
-       
+
        def __init__(self):
            self.console = Console()
            self.progress = Progress(
@@ -160,53 +160,53 @@ Monitor sync progress with a rich terminal UI:
                console=self.console
            )
            self.current_task = None
-       
+
        def on_progress(self, event: SyncProgressEvent):
            """Handle progress events."""
            if event.type == "scan_start":
                self.console.print("[bold blue]Starting file scan...[/]")
-           
+
            elif event.type == "scan_complete":
                self.console.print(
                    f"[bold green]Scan complete:[/] {event.total} files"
                )
-           
+
            elif event.type == "sync_start":
                self.console.print(
                    f"[bold blue]Starting sync of {event.total_files} files...[/]"
                )
                self.progress.start()
-           
+
            elif event.type == "upload_start":
                self.current_task = self.progress.add_task(
                    f"Uploading {event.file_path}",
                    total=event.file_size
                )
-           
+
            elif event.type == "upload_progress":
                self.progress.update(
                    self.current_task,
                    completed=event.bytes_transferred
                )
-           
+
            elif event.type == "upload_complete":
                self.progress.remove_task(self.current_task)
-           
+
            elif event.type == "download_start":
                self.current_task = self.progress.add_task(
                    f"Downloading {event.file_path}",
                    total=event.file_size
                )
-           
+
            elif event.type == "download_progress":
                self.progress.update(
                    self.current_task,
                    completed=event.bytes_transferred
                )
-           
+
            elif event.type == "download_complete":
                self.progress.remove_task(self.current_task)
-           
+
            elif event.type == "sync_complete":
                self.progress.stop()
                self.console.print("\n[bold green]Sync complete![/]")
@@ -216,18 +216,18 @@ Monitor sync progress with a rich terminal UI:
 
    def sync_with_progress():
        """Sync with rich progress UI."""
-       
+
        # Create UI and progress tracker
        ui = RichProgressUI()
        tracker = SyncProgressTracker(callback=ui.on_progress)
-       
+
        # Create sync engine with progress tracker
        engine = SyncEngine(
            client=dest_client,
            entries_manager_factory=create_entries_manager,
            progress_tracker=tracker
        )
-       
+
        # Create sync pair
        pair = SyncPair(
            source_root="/home/user/documents",
@@ -236,7 +236,7 @@ Monitor sync progress with a rich terminal UI:
            destination_client=dest_client,
            mode=SyncMode.TWO_WAY
        )
-       
+
        # Perform sync
        stats = engine.sync_pair(pair)
 
@@ -263,7 +263,7 @@ Control sync execution with pause, resume, and cancel:
 
    class ControlledSync:
        """Sync with pause/resume/cancel support."""
-       
+
        def __init__(self):
            self.controller = SyncPauseController()
            self.engine = SyncEngine(
@@ -272,35 +272,35 @@ Control sync execution with pause, resume, and cancel:
                pause_controller=self.controller
            )
            self.sync_thread = None
-       
+
        def start_sync(self, pair: SyncPair):
            """Start sync in background thread."""
            def run():
                print("Starting sync...")
                stats = self.engine.sync_pair(pair)
                print(f"Sync complete: {stats}")
-           
+
            self.sync_thread = threading.Thread(target=run)
            self.sync_thread.start()
-       
+
        def pause(self):
            """Pause sync."""
            print("Pausing sync...")
            self.controller.pause()
            print("Sync paused")
-       
+
        def resume(self):
            """Resume sync."""
            print("Resuming sync...")
            self.controller.resume()
            print("Sync resumed")
-       
+
        def cancel(self):
            """Cancel sync."""
            print("Cancelling sync...")
            self.controller.cancel()
            print("Sync cancelled")
-       
+
        def wait(self):
            """Wait for sync to complete."""
            if self.sync_thread:
@@ -309,22 +309,22 @@ Control sync execution with pause, resume, and cancel:
    def main():
        """Main function with signal handlers."""
        sync = ControlledSync()
-       
+
        # Set up signal handlers
        def handle_sigusr1(signum, frame):
            sync.pause()
-       
+
        def handle_sigusr2(signum, frame):
            sync.resume()
-       
+
        def handle_sigint(signum, frame):
            sync.cancel()
            sys.exit(0)
-       
+
        signal.signal(signal.SIGUSR1, handle_sigusr1)
        signal.signal(signal.SIGUSR2, handle_sigusr2)
        signal.signal(signal.SIGINT, handle_sigint)
-       
+
        # Create sync pair
        pair = SyncPair(
            source_root="/home/user/documents",
@@ -333,10 +333,10 @@ Control sync execution with pause, resume, and cancel:
            destination_client=dest_client,
            mode=SyncMode.TWO_WAY
        )
-       
+
        # Start sync
        sync.start_sync(pair)
-       
+
        # Wait for sync to complete
        sync.wait()
 
@@ -360,7 +360,7 @@ Sync multiple directory pairs in parallel:
 
    def sync_multiple_pairs():
        """Sync multiple directory pairs in parallel."""
-       
+
        # Create sync engine with concurrency limits
        limits = ConcurrencyLimits(transfers=3, operations=10)
        engine = SyncEngine(
@@ -368,7 +368,7 @@ Sync multiple directory pairs in parallel:
            entries_manager_factory=create_entries_manager,
            concurrency_limits=limits
        )
-       
+
        # Define sync pairs
        pairs = [
            SyncPair(
@@ -393,7 +393,7 @@ Sync multiple directory pairs in parallel:
                mode=SyncMode.SOURCE_TO_DESTINATION
            )
        ]
-       
+
        # Sync all pairs in parallel
        with ThreadPoolExecutor(max_workers=3) as executor:
            # Submit all sync jobs
@@ -401,7 +401,7 @@ Sync multiple directory pairs in parallel:
                executor.submit(engine.sync_pair, pair): pair
                for pair in pairs
            }
-           
+
            # Collect results as they complete
            for future in as_completed(futures):
                pair = futures[future]
@@ -433,11 +433,11 @@ Handle conflicts with custom resolution logic:
 
    def resolve_conflict(source_file, dest_file):
        """Custom conflict resolution function.
-       
+
        Args:
            source_file: Source file info
            dest_file: Destination file info
-       
+
        Returns:
            'source', 'destination', or 'skip'
        """
@@ -446,7 +446,7 @@ Handle conflicts with custom resolution logic:
        print(f"  Destination modified: {dest_file.mtime}")
        print(f"  Source size: {source_file.size} bytes")
        print(f"  Destination size: {dest_file.size} bytes")
-       
+
        # Custom logic: choose larger file
        if source_file.size > dest_file.size:
            print("  Resolution: Using source (larger)")
@@ -465,13 +465,13 @@ Handle conflicts with custom resolution logic:
 
    def sync_with_conflict_resolution():
        """Sync with custom conflict resolution."""
-       
+
        # Create sync engine
        engine = SyncEngine(
            client=dest_client,
            entries_manager_factory=create_entries_manager
        )
-       
+
        # Create sync pair with manual conflict resolution
        pair = SyncPair(
            source_root="/home/user/documents",
@@ -482,10 +482,10 @@ Handle conflicts with custom resolution logic:
            conflict_resolution=ConflictResolution.MANUAL,
            conflict_handler=resolve_conflict
        )
-       
+
        # Perform sync
        stats = engine.sync_pair(pair)
-       
+
        print(f"\nSync complete!")
        print(f"  Conflicts resolved: {stats.get('conflicts', 0)}")
 
@@ -532,17 +532,17 @@ Load sync configuration from JSON:
    # Load and use config
    try:
        pairs = load_sync_pairs_from_json(config_path)
-       
+
        engine = SyncEngine(
            client=dest_client,
            entries_manager_factory=create_entries_manager
        )
-       
+
        for pair in pairs:
            print(f"Syncing {pair.source_root}...")
            stats = engine.sync_pair(pair)
            print(f"  Complete: {stats}")
-   
+
    except SyncConfigError as e:
        print(f"Config error: {e}")
 
@@ -561,24 +561,24 @@ See :doc:`protocols` for complete S3 implementation.
 
    def sync_to_s3():
        """Sync local files to AWS S3."""
-       
+
        # Create S3 client
        s3_client = S3StorageClient(
            bucket='my-backup-bucket',
            prefix='documents',
            region_name='us-west-2'
        )
-       
+
        # Create entries manager factory
        def create_entries_manager(client, storage_id):
            return S3EntriesManager(client, 'my-backup-bucket', 'documents')
-       
+
        # Create sync engine
        engine = SyncEngine(
            client=s3_client,
            entries_manager_factory=create_entries_manager
        )
-       
+
        # Create sync pair
        pair = SyncPair(
            source_root="/home/user/documents",
@@ -587,7 +587,7 @@ See :doc:`protocols` for complete S3 implementation.
            destination_client=s3_client,
            mode=SyncMode.SOURCE_TO_DESTINATION
        )
-       
+
        # Sync to S3
        stats = engine.sync_pair(pair)
        print(f"Synced to S3: {stats}")
@@ -605,23 +605,23 @@ Google Drive Integration
 
    def sync_to_gdrive():
        """Sync local files to Google Drive."""
-       
+
        # Create Google Drive client
        gdrive_client = GDriveStorageClient(
            credentials_path='credentials.json',
            root_folder_id='your-folder-id'
        )
-       
+
        # Create entries manager factory
        def create_entries_manager(client, storage_id):
            return GDriveEntriesManager(client, storage_id)
-       
+
        # Create sync engine
        engine = SyncEngine(
            client=gdrive_client,
            entries_manager_factory=create_entries_manager
        )
-       
+
        # Create sync pair
        pair = SyncPair(
            source_root="/home/user/documents",
@@ -630,7 +630,7 @@ Google Drive Integration
            destination_client=gdrive_client,
            mode=SyncMode.TWO_WAY
        )
-       
+
        # Sync to Google Drive
        stats = engine.sync_pair(pair)
        print(f"Synced to Google Drive: {stats}")
@@ -660,13 +660,13 @@ Run sync on a schedule using APScheduler:
        """Perform scheduled sync."""
        try:
            logger.info("Starting scheduled sync...")
-           
+
            # Create sync engine
            engine = SyncEngine(
                client=dest_client,
                entries_manager_factory=create_entries_manager
            )
-           
+
            # Create sync pair
            pair = SyncPair(
                source_root="/home/user/documents",
@@ -675,19 +675,19 @@ Run sync on a schedule using APScheduler:
                destination_client=dest_client,
                mode=SyncMode.TWO_WAY
            )
-           
+
            # Perform sync
            stats = engine.sync_pair(pair)
-           
+
            logger.info(f"Sync complete: {stats}")
-       
+
        except Exception as e:
            logger.error(f"Sync failed: {e}", exc_info=True)
 
    def main():
        """Run scheduled sync."""
        scheduler = BlockingScheduler()
-       
+
        # Schedule sync every hour
        scheduler.add_job(
            scheduled_sync,
@@ -695,7 +695,7 @@ Run sync on a schedule using APScheduler:
            hours=1,
            id='hourly_sync'
        )
-       
+
        # Schedule sync at 2 AM daily
        scheduler.add_job(
            scheduled_sync,
@@ -703,7 +703,7 @@ Run sync on a schedule using APScheduler:
            hour=2,
            id='daily_sync'
        )
-       
+
        logger.info("Starting scheduler...")
        try:
            scheduler.start()

@@ -39,7 +39,7 @@ Upload a file to storage:
        progress_callback: Optional[Callable[[int, int], None]] = None
    ) -> Any:
        """Upload a file to storage.
-       
+
        Args:
            file_path: Local path to file to upload
            relative_path: Path in storage (preserves directory structure)
@@ -47,7 +47,7 @@ Upload a file to storage:
            chunk_size: Size of upload chunks in bytes
            use_multipart_threshold: File size to trigger multipart upload
            progress_callback: Called with (bytes_uploaded, total_bytes)
-       
+
        Returns:
            Upload result (implementation-specific)
        """
@@ -67,12 +67,12 @@ Download a file from storage:
        progress_callback: Optional[Callable[[int, int], None]] = None
    ) -> Path:
        """Download a file from storage.
-       
+
        Args:
            hash_value: Content hash of the file
            output_path: Local path where file should be saved
            progress_callback: Called with (bytes_downloaded, total_bytes)
-       
+
        Returns:
            Path where file was saved
        """
@@ -91,11 +91,11 @@ Delete files from storage:
        delete_forever: bool = False
    ) -> Any:
        """Delete file entries from storage.
-       
+
        Args:
            entry_ids: List of entry IDs to delete
            delete_forever: If True, permanently delete; if False, move to trash
-       
+
        Returns:
            Delete result (implementation-specific)
        """
@@ -115,12 +115,12 @@ Create a folder in storage:
        storage_id: int = 0
    ) -> dict[str, Any]:
        """Create a folder in storage.
-       
+
        Args:
            name: Folder name (can include path separators for nested folders)
            parent_id: Parent folder ID (None for root)
            storage_id: Storage/workspace identifier
-       
+
        Returns:
            Dictionary with 'status' and 'id' keys
        """
@@ -139,11 +139,11 @@ Resolve a path to an entry ID:
        storage_id: int = 0
    ) -> Optional[int]:
        """Resolve a path to an entry ID.
-       
+
        Args:
            path: Path to resolve
            storage_id: Storage/workspace identifier
-       
+
        Returns:
            Entry ID if found, None otherwise
        """
@@ -163,12 +163,12 @@ Rename/move an entry:
        new_parent_id: Optional[int] = None
    ) -> Any:
        """Rename or move an entry.
-       
+
        Args:
            entry_id: Entry to rename/move
            new_name: New name
            new_parent_id: New parent folder ID (for moves)
-       
+
        Returns:
            Rename result (implementation-specific)
        """
@@ -191,27 +191,27 @@ Required Properties
        def id(self) -> int:
            """Unique identifier (persists across renames)."""
            ...
-       
+
        @property
        def type(self) -> str:
            """Entry type: 'file' or 'folder'."""
            ...
-       
+
        @property
        def file_size(self) -> int:
            """File size in bytes (0 for folders)."""
            ...
-       
+
        @property
        def hash(self) -> str:
            """Content hash (e.g., MD5, SHA256)."""
            ...
-       
+
        @property
        def name(self) -> str:
            """File or folder name."""
            ...
-       
+
        @property
        def updated_at(self) -> Optional[str]:
            """ISO timestamp of last modification."""
@@ -225,27 +225,27 @@ Example Implementation
    class MyFileEntry:
        def __init__(self, data: dict):
            self._data = data
-       
+
        @property
        def id(self) -> int:
            return self._data['id']
-       
+
        @property
        def type(self) -> str:
            return self._data['type']
-       
+
        @property
        def file_size(self) -> int:
            return self._data.get('size', 0)
-       
+
        @property
        def hash(self) -> str:
            return self._data.get('hash', '')
-       
+
        @property
        def name(self) -> str:
            return self._data['name']
-       
+
        @property
        def updated_at(self) -> Optional[str]:
            return self._data.get('updated_at')
@@ -267,7 +267,7 @@ Get all entries in storage:
 
    def get_all_entries(self) -> Iterator[FileEntryProtocol]:
        """Get all file entries.
-       
+
        Yields:
            File entries one at a time
        """
@@ -293,10 +293,10 @@ Get an entry by ID:
 
    def get_entry_by_id(self, entry_id: int) -> Optional[FileEntryProtocol]:
        """Get an entry by its ID.
-       
+
        Args:
            entry_id: Entry ID to look up
-       
+
        Returns:
            File entry if found, None otherwise
        """
@@ -323,33 +323,33 @@ Example: S3 Storage Backend
 
    class S3FileEntry:
        """File entry for S3 objects."""
-       
+
        def __init__(self, obj: dict, bucket: str):
            self._obj = obj
            self._bucket = bucket
-       
+
        @property
        def id(self) -> int:
            # Use hash of key as ID
            return hash(self._obj['Key'])
-       
+
        @property
        def type(self) -> str:
            return 'folder' if self._obj['Key'].endswith('/') else 'file'
-       
+
        @property
        def file_size(self) -> int:
            return self._obj.get('Size', 0)
-       
+
        @property
        def hash(self) -> str:
            # S3 provides ETag which is often the MD5 hash
            return self._obj.get('ETag', '').strip('"')
-       
+
        @property
        def name(self) -> str:
            return self._obj['Key'].split('/')[-1]
-       
+
        @property
        def updated_at(self) -> Optional[str]:
            dt = self._obj.get('LastModified')
@@ -357,27 +357,27 @@ Example: S3 Storage Backend
 
    class S3EntriesManager:
        """Manages S3 file entries."""
-       
+
        def __init__(self, client: 'S3StorageClient', bucket: str, prefix: str = ''):
            self.client = client
            self.bucket = bucket
            self.prefix = prefix
            self._entries: list[S3FileEntry] = []
            self.refresh()
-       
+
        def refresh(self) -> None:
            """Refresh entries from S3."""
            self._entries = []
            paginator = self.client.s3_client.get_paginator('list_objects_v2')
-           
+
            for page in paginator.paginate(Bucket=self.bucket, Prefix=self.prefix):
                for obj in page.get('Contents', []):
                    self._entries.append(S3FileEntry(obj, self.bucket))
-       
+
        def get_all_entries(self) -> Iterator[FileEntryProtocol]:
            """Get all entries."""
            yield from self._entries
-       
+
        def get_entry_by_id(self, entry_id: int) -> Optional[FileEntryProtocol]:
            """Get entry by ID."""
            for entry in self._entries:
@@ -387,12 +387,12 @@ Example: S3 Storage Backend
 
    class S3StorageClient:
        """S3 storage backend for SyncEngine."""
-       
+
        def __init__(self, bucket: str, prefix: str = '', **kwargs):
            self.bucket = bucket
            self.prefix = prefix
            self.s3_client = boto3.client('s3', **kwargs)
-       
+
        def upload_file(
            self,
            file_path: Path,
@@ -405,12 +405,12 @@ Example: S3 Storage Backend
            """Upload file to S3."""
            key = f"{self.prefix}/{relative_path}".lstrip('/')
            file_size = file_path.stat().st_size
-           
+
            # Progress callback wrapper
            def s3_progress(bytes_transferred):
                if progress_callback:
                    progress_callback(bytes_transferred, file_size)
-           
+
            # Upload file
            self.s3_client.upload_file(
                str(file_path),
@@ -418,9 +418,9 @@ Example: S3 Storage Backend
                key,
                Callback=s3_progress
            )
-           
+
            return {'key': key, 'bucket': self.bucket}
-       
+
        def download_file(
            self,
            hash_value: str,
@@ -431,16 +431,16 @@ Example: S3 Storage Backend
            # In real implementation, you'd need to map hash to S3 key
            # This is simplified for example purposes
            key = self._hash_to_key(hash_value)
-           
+
            # Get file size
            response = self.s3_client.head_object(Bucket=self.bucket, Key=key)
            file_size = response['ContentLength']
-           
+
            # Progress callback wrapper
            def s3_progress(bytes_transferred):
                if progress_callback:
                    progress_callback(bytes_transferred, file_size)
-           
+
            # Download file
            self.s3_client.download_file(
                self.bucket,
@@ -448,9 +448,9 @@ Example: S3 Storage Backend
                str(output_path),
                Callback=s3_progress
            )
-           
+
            return output_path
-       
+
        def delete_file_entries(
            self,
            entry_ids: list[int],
@@ -459,7 +459,7 @@ Example: S3 Storage Backend
            """Delete files from S3."""
            # Map IDs to keys
            keys = [self._id_to_key(entry_id) for entry_id in entry_ids]
-           
+
            # Delete objects
            self.s3_client.delete_objects(
                Bucket=self.bucket,
@@ -467,9 +467,9 @@ Example: S3 Storage Backend
                    'Objects': [{'Key': key} for key in keys]
                }
            )
-           
+
            return {'deleted': len(keys)}
-       
+
        def create_folder(
            self,
            name: str,
@@ -478,15 +478,15 @@ Example: S3 Storage Backend
        ) -> dict[str, Any]:
            """Create folder in S3 (zero-byte object with trailing slash)."""
            key = f"{self.prefix}/{name}/".lstrip('/')
-           
+
            self.s3_client.put_object(
                Bucket=self.bucket,
                Key=key,
                Body=b''
            )
-           
+
            return {'status': 'created', 'id': hash(key)}
-       
+
        def resolve_path_to_id(
            self,
            path: str,
@@ -494,13 +494,13 @@ Example: S3 Storage Backend
        ) -> Optional[int]:
            """Resolve path to ID."""
            key = f"{self.prefix}/{path}".lstrip('/')
-           
+
            try:
                self.s3_client.head_object(Bucket=self.bucket, Key=key)
                return hash(key)
            except self.s3_client.exceptions.NoSuchKey:
                return None
-       
+
        def rename_entry(
            self,
            entry_id: int,
@@ -510,24 +510,24 @@ Example: S3 Storage Backend
            """Rename/move entry in S3."""
            old_key = self._id_to_key(entry_id)
            new_key = f"{self.prefix}/{new_name}".lstrip('/')
-           
+
            # Copy to new location
            self.s3_client.copy_object(
                Bucket=self.bucket,
                CopySource={'Bucket': self.bucket, 'Key': old_key},
                Key=new_key
            )
-           
+
            # Delete old location
            self.s3_client.delete_object(Bucket=self.bucket, Key=old_key)
-           
+
            return {'old_key': old_key, 'new_key': new_key}
-       
+
        def _hash_to_key(self, hash_value: str) -> str:
            """Map hash to S3 key (implementation-specific)."""
            # In real implementation, maintain a hash->key mapping
            raise NotImplementedError()
-       
+
        def _id_to_key(self, entry_id: int) -> str:
            """Map ID to S3 key (implementation-specific)."""
            # In real implementation, maintain an ID->key mapping
@@ -581,7 +581,7 @@ SyncEngine includes test utilities to verify your storage backend:
                bucket='test-bucket',
                region_name='us-west-2'
            )
-       
+
        def create_entries_manager(self, client, storage_id):
            """Create an entries manager for testing."""
            return S3EntriesManager(client, 'test-bucket')
@@ -621,21 +621,21 @@ Progress Callbacks
 
 .. code-block:: python
 
-   def upload_file(self, file_path: Path, relative_path: str, 
+   def upload_file(self, file_path: Path, relative_path: str,
                    progress_callback=None, **kwargs):
        file_size = file_path.stat().st_size
        bytes_uploaded = 0
-       
+
        # Upload in chunks
        with open(file_path, 'rb') as f:
            while chunk := f.read(8192):
                # Upload chunk
                upload_chunk(chunk)
                bytes_uploaded += len(chunk)
-               
+
                if progress_callback:
                    progress_callback(bytes_uploaded, file_size)
-       
+
        # Ensure final callback
        if progress_callback:
            progress_callback(file_size, file_size)
@@ -674,15 +674,15 @@ Caching
            self._cache = {}
            self._cache_time = None
            self._cache_ttl = 300  # 5 minutes
-       
+
        def get_all_entries(self):
            now = time.time()
-           if (self._cache_time is None or 
+           if (self._cache_time is None or
                now - self._cache_time > self._cache_ttl):
                self.refresh()
-           
+
            yield from self._cache.values()
-       
+
        def refresh(self):
            self._cache = {}
            # Fetch entries from storage

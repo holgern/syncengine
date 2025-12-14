@@ -109,7 +109,7 @@ SyncMode
       :raises ValueError: If mode string is not recognized
 
       Supported abbreviations:
-      
+
       * ``tw`` → TWO_WAY
       * ``std`` → SOURCE_TO_DESTINATION
       * ``sb`` → SOURCE_BACKUP
