@@ -1,3 +1,8 @@
+[![PyPI - Version](https://img.shields.io/pypi/v/syncengine)](https://pypi.org/project/syncengine/)
+![PyPI - Python Version](https://img.shields.io/pypi/pyversions/syncengine)
+![PyPI - Downloads](https://img.shields.io/pypi/dm/syncengine)
+[![codecov](https://codecov.io/gh/holgern/syncengine/graph/badge.svg?token=iCHXwbjAXG)](https://codecov.io/gh/holgern/syncengine)
+
 # syncengine
 
 A flexible, bidirectional file synchronization engine for Python that supports multiple
