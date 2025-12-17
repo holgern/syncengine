@@ -85,6 +85,13 @@ conflicts, and provides multiple synchronization modes to fit different use case
   - Thread-safe for parallel operations
   - Rich progress bar support
 
+- **Force Upload/Download** ✨ NEW
+
+  - Force re-upload/re-download files even when they match
+  - Bypass hash/size comparison for replace operations
+  - Perfect for duplicate handling and refresh scenarios
+  - Works with all sync modes
+
 - **Protocol Agnostic**
   - Works with any storage backend (local, S3, FTP, custom protocols)
   - Pluggable storage interface
@@ -154,12 +161,16 @@ python benchmarks/run_benchmarks.py
 
 For detailed API documentation, see the individual module docstrings:
 
-- `syncengine/engine.py` - Main sync engine
+- `syncengine/engine.py` - Main sync engine with force upload/download support ✨
+  UPDATED
 - `syncengine/modes.py` - Sync mode definitions
 - `syncengine/progress.py` - Progress tracking API ✨ NEW
-- `syncengine/comparator.py` - Change detection logic
+- `syncengine/comparator.py` - Change detection and force comparison logic ✨ UPDATED
 - `syncengine/protocols.py` - Storage protocol interfaces
 - `syncengine/config.py` - Configuration options
+
+See `PYDRIME_INTEGRATION_GUIDE.md` for detailed guide on integrating force
+upload/download features.
 
 ## Contributing
 

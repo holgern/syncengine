@@ -81,6 +81,8 @@ class FileComparator:
         previous_synced_files: Optional[set[str]] = None,
         previous_source_tree: Optional[SourceTree] = None,
         previous_destination_tree: Optional[DestinationTree] = None,
+        force_upload: bool = False,
+        force_download: bool = False,
     ):
         """Initialize file comparator.
 
@@ -93,11 +95,17 @@ class FileComparator:
                                 Contains file_id -> path mapping.
             previous_destination_tree: Previous destination tree state for rename
                                       detection. Contains id -> path mapping.
+            force_upload: If True, bypass hash/size comparison and always upload
+                         source files (even if they match destination)
+            force_download: If True, bypass hash/size comparison and always download
+                           destination files (even if they match source)
         """
         self.sync_mode = sync_mode
         self.previous_synced_files = previous_synced_files or set()
         self.previous_source_tree = previous_source_tree
         self.previous_destination_tree = previous_destination_tree
+        self.force_upload = force_upload
+        self.force_download = force_download
 
         # Track detected renames to avoid processing them twice
         self._source_renames: dict[int, str] = {}  # file_id -> new_path
@@ -243,10 +251,31 @@ class FileComparator:
         """Compare files that exist in both locations.
 
         Comparison logic:
-        1. First compare sizes - if different, files are definitely different
-        2. If sizes match, compare hashes if available (destination has hash)
-        3. If hash not available, fall back to mtime comparison
+        1. Check force flags first - bypass comparison if set
+        2. Compare sizes - if different, files are definitely different
+        3. If sizes match, compare hashes if available (destination has hash)
+        4. If hash not available, fall back to mtime comparison
         """
+        # Force upload: always upload source file regardless of comparison
+        if self.force_upload and self.sync_mode.allows_upload:
+            return SyncDecision(
+                action=SyncAction.UPLOAD,
+                reason="Force upload: bypassing comparison",
+                source_file=source_file,
+                destination_file=destination_file,
+                relative_path=path,
+            )
+
+        # Force download: always download destination file regardless of comparison
+        if self.force_download and self.sync_mode.allows_download:
+            return SyncDecision(
+                action=SyncAction.DOWNLOAD,
+                reason="Force download: bypassing comparison",
+                source_file=source_file,
+                destination_file=destination_file,
+                relative_path=path,
+            )
+
         # Check if files are identical by size first (quick check)
         if source_file.size == destination_file.size:
             # Sizes match - check hash if available for content verification

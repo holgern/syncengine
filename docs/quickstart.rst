@@ -252,6 +252,53 @@ Rename files during upload (useful for duplicate handling):
        file_renames=file_renames
    )
 
+Force Upload/Download Files
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Force re-upload or re-download files even when they appear identical (new in v0.2.0):
+
+.. code-block:: python
+
+   # Force upload all files (useful for "replace" operations)
+   stats = engine.sync_pair(
+       pair,
+       force_upload=True,  # Bypass hash/size comparison
+   )
+
+   # Force download all files (useful for refreshing local copies)
+   pair_download = SyncPair(
+       source=Path("/home/user/documents"),
+       destination="/cloud/documents",
+       sync_mode=SyncMode.DESTINATION_TO_SOURCE,
+       storage_id=0,
+   )
+
+   stats = engine.sync_pair(
+       pair_download,
+       force_download=True,  # Bypass hash/size comparison
+   )
+
+   # Force upload with duplicate handling
+   stats = engine.sync_pair(
+       pair,
+       force_upload=True,          # Force upload all files
+       files_to_skip={"temp.txt"},  # But still skip these
+       file_renames={"old.txt": "new.txt"},  # And rename these
+   )
+
+**When to use force_upload/force_download:**
+
+* **Replace duplicates**: When you want to replace existing files with identical content
+* **Refresh files**: Update modification timestamps on remote/local files
+* **Re-upload after errors**: Force re-upload files that failed previously
+* **Sync metadata**: Update file metadata even when content is identical
+
+**Sync mode compatibility:**
+
+* ``force_upload`` works with: ``SOURCE_TO_DESTINATION``, ``SOURCE_BACKUP``, ``TWO_WAY``
+* ``force_download`` works with: ``DESTINATION_TO_SOURCE``, ``DESTINATION_BACKUP``, ``TWO_WAY``
+* In ``TWO_WAY`` mode, ``force_upload`` takes precedence if both flags are set
+
 Complete Example with All Features
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
@@ -292,6 +339,7 @@ Complete Example with All Features
        sync_progress_tracker=tracker,
        files_to_skip={"temp.txt"},
        file_renames={"old.txt": "new.txt"},
+       force_upload=False,  # Set to True to force upload all files
        max_workers=4,
    )
 

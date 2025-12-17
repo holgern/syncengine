@@ -175,6 +175,8 @@ class SyncEngine:
         sync_progress_tracker: Optional[SyncProgressTracker] = None,
         files_to_skip: Optional[set[str]] = None,
         file_renames: Optional[dict[str, str]] = None,
+        force_upload: bool = False,
+        force_download: bool = False,
     ) -> dict:
         """Sync a single sync pair.
 
@@ -195,6 +197,14 @@ class SyncEngine:
             files_to_skip: Optional set of relative paths to skip (duplicate
                           handling)
             file_renames: Optional dict mapping original paths to renamed paths
+            force_upload: If True, upload all source files even if they match remote
+                         files (bypasses hash/size comparison). Useful for replace
+                         operations. Works with SOURCE_TO_DESTINATION, SOURCE_BACKUP,
+                         and TWO_WAY modes.
+            force_download: If True, download all destination files even if they
+                           match local files (bypasses hash/size comparison). Works
+                           with DESTINATION_TO_SOURCE, DESTINATION_BACKUP, and
+                           TWO_WAY modes.
 
         Returns:
             Dictionary with sync statistics
@@ -204,6 +214,10 @@ class SyncEngine:
             >>> pair = SyncPair(Path("/local"), "/remote", SyncMode.TWO_WAY)
             >>> stats = engine.sync_pair(pair, dry_run=True)
             >>> print(f"Would upload {stats['uploads']} files")
+
+            >>> # Force upload all files (replace existing)
+            >>> stats = engine.sync_pair(pair, force_upload=True)
+            >>> print(f"Uploaded {stats['uploads']} files")
         """
         # Validate local directory exists
         if not pair.source.exists():
@@ -239,6 +253,7 @@ class SyncEngine:
                 sync_progress_tracker,
                 files_to_skip,
                 file_renames,
+                force_upload,
             )
         elif use_streaming and not dry_run and pair.sync_mode.requires_destination_scan:
             # Use streaming mode for other modes (not dry-run)
@@ -251,6 +266,8 @@ class SyncEngine:
                 max_workers,
                 start_delay,
                 sync_progress_tracker,
+                force_upload,
+                force_download,
             )
         else:
             # Use traditional mode (scan all files upfront)
@@ -263,6 +280,8 @@ class SyncEngine:
                 max_workers,
                 start_delay,
                 sync_progress_tracker,
+                force_upload,
+                force_download,
             )
 
     def _sync_pair_traditional(
@@ -275,6 +294,8 @@ class SyncEngine:
         max_workers: int,
         start_delay: float = 0.0,
         sync_progress_tracker: Optional[SyncProgressTracker] = None,
+        force_upload: bool = False,
+        force_download: bool = False,
     ) -> dict:
         """Traditional sync: scan all files upfront, then process.
 
@@ -287,6 +308,8 @@ class SyncEngine:
             max_workers: Number of parallel workers
             start_delay: Delay in seconds between starting each parallel operation
             sync_progress_tracker: Optional progress tracker (disables spinners)
+            force_upload: If True, bypass hash/size comparison and upload all files
+            force_download: If True, bypass hash/size comparison and download all files
 
         Returns:
             Dictionary with sync statistics
@@ -363,6 +386,8 @@ class SyncEngine:
             previous_synced_files,
             previous_local_tree,
             previous_remote_tree,
+            force_upload,
+            force_download,
         )
         decisions = comparator.compare_files(local_file_map, remote_file_map)
 
@@ -447,6 +472,8 @@ class SyncEngine:
         max_workers: int,
         start_delay: float = 0.0,
         sync_progress_tracker: Optional[SyncProgressTracker] = None,
+        force_upload: bool = False,
+        force_download: bool = False,
     ) -> dict:
         """Streaming sync: process files in batches as they're discovered.
 
@@ -463,6 +490,8 @@ class SyncEngine:
             max_workers: Number of parallel workers
             start_delay: Delay in seconds between starting each parallel operation
             sync_progress_tracker: Optional progress tracker (disables spinners)
+            force_upload: If True, bypass hash/size comparison and upload all files
+            force_download: If True, bypass hash/size comparison and download all files
 
         Returns:
             Dictionary with sync statistics
@@ -523,6 +552,8 @@ class SyncEngine:
                 synced_files=synced_files,
                 synced_local_file_map=synced_local_file_map,
                 synced_remote_file_map=synced_remote_file_map,
+                force_upload=force_upload,
+                force_download=force_download,
             )
 
         # Step 3: Handle local-only files (files that don't exist remotely)
@@ -540,6 +571,8 @@ class SyncEngine:
                 previous_synced_files=previous_synced_files,
                 synced_files=synced_files,
                 synced_local_file_map=synced_local_file_map,
+                force_upload=force_upload,
+                force_download=force_download,
             )
 
         # Step 4: Save sync state after successful sync (for TWO_WAY mode)
@@ -583,6 +616,7 @@ class SyncEngine:
         sync_progress_tracker: Optional[SyncProgressTracker] = None,
         files_to_skip: Optional[set[str]] = None,
         file_renames: Optional[dict[str, str]] = None,
+        force_upload: bool = False,
     ) -> dict:
         """Incremental sync: process directories level by level.
 
@@ -610,6 +644,7 @@ class SyncEngine:
             files_to_skip: Optional set of relative paths to skip (duplicate
                           handling)
             file_renames: Optional dict mapping original paths to renamed paths
+            force_upload: If True, bypass hash/size comparison and upload all files
 
         Returns:
             Dictionary with sync statistics
@@ -728,6 +763,7 @@ class SyncEngine:
                 sync_progress_tracker=sync_progress_tracker,
                 files_to_skip=files_to_skip,
                 file_renames=file_renames,
+                force_upload=force_upload,
             )
 
             # Track local files seen
@@ -903,6 +939,7 @@ class SyncEngine:
         sync_progress_tracker: Optional[SyncProgressTracker],
         files_to_skip: Optional[set[str]] = None,
         file_renames: Optional[dict[str, str]] = None,
+        force_upload: bool = False,
     ) -> dict:
         """Process a single directory in incremental sync.
 
@@ -922,6 +959,7 @@ class SyncEngine:
             sync_progress_tracker: Optional progress tracker
             files_to_skip: Optional set of relative paths to skip
             file_renames: Optional dict mapping original paths to renamed paths
+            force_upload: If True, bypass hash/size comparison and upload all files
 
         Returns:
             Dictionary with 'subdirs' (list of Path), 'files_count' (int),
@@ -990,7 +1028,7 @@ class SyncEngine:
 
         # Filter and process files
         upload_files, skipped_count = self._filter_files_for_upload(
-            files_after_skip, remote_file_set, remote_file_sizes, stats
+            files_after_skip, remote_file_set, remote_file_sizes, stats, force_upload
         )
 
         # Notify tracker about skipped files
@@ -1044,6 +1082,7 @@ class SyncEngine:
         remote_file_set: set[str],
         remote_file_sizes: dict[str, int],
         stats: dict,
+        force_upload: bool = False,
     ) -> tuple[list[SourceFile], int]:
         """Filter files that need to be uploaded.
 
@@ -1052,6 +1091,7 @@ class SyncEngine:
             remote_file_set: Set of existing remote files
             remote_file_sizes: Dict mapping remote paths to file sizes
             stats: Statistics dictionary (modified in place)
+            force_upload: If True, bypass hash/size comparison and upload all files
 
         Returns:
             Tuple of (files to upload, skipped count)
@@ -1060,7 +1100,10 @@ class SyncEngine:
         skipped_count = 0
 
         for local_file in files:
-            if local_file.relative_path in remote_file_set:
+            if force_upload:
+                # Force upload: upload all files regardless of remote state
+                upload_files.append(local_file)
+            elif local_file.relative_path in remote_file_set:
                 # File exists remotely - check if size changed
                 remote_size = remote_file_sizes.get(local_file.relative_path)
                 if remote_size is not None and local_file.size != remote_size:
@@ -1636,6 +1679,8 @@ class SyncEngine:
         synced_files: Optional[set[str]] = None,
         synced_local_file_map: Optional[dict[str, SourceFile]] = None,
         synced_remote_file_map: Optional[dict[str, DestinationFile]] = None,
+        force_upload: bool = False,
+        force_download: bool = False,
     ) -> None:
         """Process remote files in batches for streaming sync.
 
@@ -1706,6 +1751,8 @@ class SyncEngine:
                     max_workers=max_workers,
                     start_delay=start_delay,
                     previous_synced_files=previous_synced_files,
+                    force_upload=force_upload,
+                    force_download=force_download,
                 )
 
                 # Update stats
@@ -1751,6 +1798,8 @@ class SyncEngine:
         max_workers: int,
         start_delay: float = 0.0,
         previous_synced_files: Optional[set[str]] = None,
+        force_upload: bool = False,
+        force_download: bool = False,
     ) -> tuple[dict, set[str], dict[str, SourceFile], dict[str, DestinationFile]]:
         """Process a single batch of remote entries.
 
@@ -1787,7 +1836,14 @@ class SyncEngine:
             logger.debug("Filtered out %d folders from batch", filtered)
 
         # Compare batch with local files
-        comparator = FileComparator(pair.sync_mode, previous_synced_files)
+        comparator = FileComparator(
+            pair.sync_mode,
+            previous_synced_files,
+            None,
+            None,
+            force_upload,
+            force_download,
+        )
         batch_decisions = []
 
         for remote_file in remote_files:
@@ -1995,6 +2051,8 @@ class SyncEngine:
         previous_synced_files: Optional[set[str]] = None,
         synced_files: Optional[set[str]] = None,
         synced_local_file_map: Optional[dict[str, SourceFile]] = None,
+        force_upload: bool = False,
+        force_download: bool = False,
     ) -> None:
         """Process local-only files for streaming sync.
 
@@ -2024,7 +2082,14 @@ class SyncEngine:
                 f"\nProcessing {len(local_only_files)} local-only file(s)..."
             )
 
-        comparator = FileComparator(pair.sync_mode, previous_synced_files)
+        comparator = FileComparator(
+            pair.sync_mode,
+            previous_synced_files,
+            None,
+            None,
+            force_upload,
+            force_download,
+        )
         local_decisions = []
 
         for local_file in local_only_files:

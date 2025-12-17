@@ -1894,3 +1894,197 @@ class TestSyncEngineExecuteOrderedOperations:
             progress_callback=None,
             max_workers=1,
         )
+
+
+class TestForceUploadDownload:
+    """Tests for force_upload and force_download functionality."""
+
+    @pytest.fixture
+    def mock_client(self):
+        """Create a mock cloud client."""
+        client = Mock(spec=StorageClientProtocol)
+        client.upload_file.return_value = {"status": "success", "id": 1}
+        client.download_file.return_value = Path("/tmp/downloaded.txt")
+        return client
+
+    @pytest.fixture
+    def mock_output(self):
+        """Create a mock output formatter."""
+        output = Mock(spec=OutputHandlerProtocol)
+        output.quiet = True
+        return output
+
+    @pytest.fixture
+    def temp_dir(self):
+        """Create a temporary directory for testing."""
+        with tempfile.TemporaryDirectory() as tmpdir:
+            yield Path(tmpdir)
+
+    def test_force_upload_incremental_mode(
+        self, mock_client, mock_entries_manager_factory, mock_output, temp_dir
+    ):
+        """Test force_upload=True uploads even when files would normally be skipped."""
+        # Create two local files
+        file1 = temp_dir / "file1.txt"
+        file1.write_text("content1")
+        file2 = temp_dir / "file2.txt"
+        file2.write_text("content2")
+
+        # Setup mock manager - no remote files exist
+        mock_entries_manager_factory.manager.get_all_recursive.return_value = []
+
+        engine = SyncEngine(
+            mock_client, mock_entries_manager_factory, output=mock_output
+        )
+        pair = SyncPair(
+            source=temp_dir,
+            destination="/remote",
+            sync_mode=SyncMode.SOURCE_TO_DESTINATION,
+            storage_id=0,
+        )
+
+        # Both files should be uploaded
+        stats = engine.sync_pair(pair, force_upload=False)
+        assert stats["uploads"] == 2
+
+        # With force_upload, files should still be uploaded
+        stats_force = engine.sync_pair(pair, force_upload=True)
+        assert stats_force["uploads"] == 2
+
+    def test_force_upload_respects_files_to_skip(
+        self, mock_client, mock_entries_manager_factory, mock_output, temp_dir
+    ):
+        """Test force_upload=True still respects files_to_skip parameter."""
+        # Create local files
+        file1 = temp_dir / "file1.txt"
+        file1.write_text("content1")
+        file2 = temp_dir / "file2.txt"
+        file2.write_text("content2")
+
+        # Setup mock manager
+        mock_entries_manager_factory.manager.get_all_recursive.return_value = []
+
+        engine = SyncEngine(
+            mock_client, mock_entries_manager_factory, output=mock_output
+        )
+        pair = SyncPair(
+            source=temp_dir,
+            destination="/remote",
+            sync_mode=SyncMode.SOURCE_TO_DESTINATION,
+            storage_id=0,
+        )
+
+        # Upload with force_upload but skip file1.txt
+        stats = engine.sync_pair(pair, force_upload=True, files_to_skip={"file1.txt"})
+
+        # file1.txt should be skipped, file2.txt should be uploaded
+        assert stats["skips"] >= 1  # At least file1.txt is skipped
+        assert stats["uploads"] == 1  # file2.txt is uploaded
+
+    def test_force_upload_traditional_mode(
+        self, mock_client, mock_entries_manager_factory, mock_output, temp_dir
+    ):
+        """Test force_upload=True works in traditional (TWO_WAY) mode."""
+        # Create local file
+        test_file = temp_dir / "test.txt"
+        test_file.write_text("test content")
+
+        # Setup mock manager to return remote file with same size
+        remote_entry = FileEntry(
+            id=1,
+            name="test.txt",
+            type="file",
+            file_size=len("test content"),
+            hash="abc123",
+        )
+        mock_entries_manager_factory.manager.get_all_recursive.return_value = [
+            (remote_entry, "test.txt")
+        ]
+
+        engine = SyncEngine(
+            mock_client, mock_entries_manager_factory, output=mock_output
+        )
+        pair = SyncPair(
+            source=temp_dir,
+            destination="/remote",
+            sync_mode=SyncMode.TWO_WAY,
+            storage_id=0,
+        )
+
+        # With force_upload, file should be uploaded even though sizes match
+        stats = engine.sync_pair(pair, force_upload=True, use_streaming=False)
+        assert stats["uploads"] == 1
+
+    def test_force_download_traditional_mode(
+        self, mock_client, mock_entries_manager_factory, mock_output, temp_dir
+    ):
+        """Test force_download=True works in traditional (TWO_WAY) mode."""
+        # Create local file
+        test_file = temp_dir / "test.txt"
+        test_file.write_text("test content")
+
+        # Setup mock manager to return remote file with same size
+        remote_entry = FileEntry(
+            id=1,
+            name="test.txt",
+            type="file",
+            file_size=len("test content"),
+            hash="abc123",
+        )
+        mock_entries_manager_factory.manager.get_all_recursive.return_value = [
+            (remote_entry, "test.txt")
+        ]
+
+        # Mock download
+        mock_client.download_file.return_value = test_file
+
+        engine = SyncEngine(
+            mock_client, mock_entries_manager_factory, output=mock_output
+        )
+        pair = SyncPair(
+            source=temp_dir,
+            destination="/remote",
+            sync_mode=SyncMode.TWO_WAY,
+            storage_id=0,
+        )
+
+        # With force_download, file should be downloaded even though sizes match
+        stats = engine.sync_pair(pair, force_download=True, use_streaming=False)
+        assert stats["downloads"] == 1
+
+    def test_force_flags_mutually_exclusive_behavior(
+        self, mock_client, mock_entries_manager_factory, mock_output, temp_dir
+    ):
+        """Test that force_upload takes precedence when both flags are set."""
+        # Create local file
+        test_file = temp_dir / "test.txt"
+        test_file.write_text("test content")
+
+        # Setup mock manager
+        remote_entry = FileEntry(
+            id=1,
+            name="test.txt",
+            type="file",
+            file_size=len("test content"),
+            hash="abc123",
+        )
+        mock_entries_manager_factory.manager.get_all_recursive.return_value = [
+            (remote_entry, "test.txt")
+        ]
+
+        engine = SyncEngine(
+            mock_client, mock_entries_manager_factory, output=mock_output
+        )
+        pair = SyncPair(
+            source=temp_dir,
+            destination="/remote",
+            sync_mode=SyncMode.TWO_WAY,
+            storage_id=0,
+        )
+
+        # Both flags set, force_upload takes precedence (checked first)
+        stats = engine.sync_pair(
+            pair, force_upload=True, force_download=True, use_streaming=False
+        )
+        assert stats["uploads"] == 1
+        assert stats["downloads"] == 0

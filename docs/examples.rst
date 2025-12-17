@@ -350,6 +350,119 @@ Upload directly into a specific folder without path resolution (new in v0.2.0):
    if __name__ == "__main__":
        upload_to_folder_id()
 
+Force Upload/Download for Replace Operations
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Force re-upload or re-download files to replace existing copies (new in v0.2.0):
+
+.. code-block:: python
+
+   from syncengine import (
+       SyncEngine,
+       SyncMode,
+       SyncPair,
+       SyncProgressTracker,
+       SyncProgressEvent,
+       SyncProgressInfo
+   )
+   from pathlib import Path
+
+   def replace_existing_files():
+       """Replace existing files using force_upload."""
+
+       # Detect which files exist on remote (your duplicate detection logic)
+       remote_duplicates = detect_remote_duplicates(local_files)
+
+       # Determine if force upload is needed
+       force_upload = len(remote_duplicates) > 0
+
+       # Optional: Files to skip (user chose "skip" action)
+       files_to_skip = {
+           "file1.txt",  # User wants to skip this
+           "file2.txt",
+       }
+
+       # Optional: Files to rename (user chose "rename" action)
+       file_renames = {
+           "conflict.txt": "conflict (1).txt",
+       }
+
+       # Progress callback
+       def progress_callback(info: SyncProgressInfo):
+           if info.event == SyncProgressEvent.UPLOAD_FILE_START:
+               print(f"⬆️  Uploading: {info.file_path}")
+           elif info.event == SyncProgressEvent.UPLOAD_FILE_COMPLETE:
+               print(f"✓ Complete: {info.file_path}")
+
+       # Create progress tracker
+       tracker = SyncProgressTracker(callback=progress_callback)
+
+       # Create sync engine
+       engine = SyncEngine(
+           client=dest_client,
+           entries_manager_factory=create_entries_manager
+       )
+
+       # Create sync pair
+       pair = SyncPair(
+           source=Path("/home/user/documents"),
+           destination="/backup",
+           sync_mode=SyncMode.SOURCE_TO_DESTINATION,
+           storage_id=0
+       )
+
+       # Upload with force (replaces existing files)
+       stats = engine.sync_pair(
+           pair,
+           sync_progress_tracker=tracker,
+           force_upload=force_upload,      # Force upload for replace
+           files_to_skip=files_to_skip,    # Still skip these
+           file_renames=file_renames,      # And rename these
+           max_workers=4,
+       )
+
+       print(f"\n✓ Replace complete!")
+       print(f"  Uploaded: {stats['uploads']} files")
+       print(f"  Skipped: {stats.get('skips', 0)} files")
+
+       # Now delete old duplicates (optional)
+       if force_upload and remote_duplicates:
+           print(f"  Deleting {len(remote_duplicates)} old duplicates...")
+           for entry_id in remote_duplicates:
+               client.delete_entries([entry_id])
+
+   def force_download_refresh():
+       """Force download all files to refresh local copies."""
+
+       # Create sync engine
+       engine = SyncEngine(
+           client=dest_client,
+           entries_manager_factory=create_entries_manager
+       )
+
+       # Create sync pair for download
+       pair = SyncPair(
+           source=Path("/home/user/documents"),
+           destination="/cloud/documents",
+           sync_mode=SyncMode.DESTINATION_TO_SOURCE,
+           storage_id=0
+       )
+
+       # Force download all files (even if they match local)
+       stats = engine.sync_pair(
+           pair,
+           force_download=True,  # Bypass comparison, download all
+       )
+
+       print(f"Downloaded: {stats['downloads']} files (forced refresh)")
+
+   if __name__ == "__main__":
+       # Example 1: Replace existing files with force upload
+       replace_existing_files()
+
+       # Example 2: Refresh local files with force download
+       force_download_refresh()
+
 Pause/Resume/Cancel Support
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 

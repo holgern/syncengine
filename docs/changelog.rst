@@ -22,6 +22,15 @@ New Features
 * Added ``files_to_skip`` parameter to ``sync_pair()`` - skip specific files during sync (useful for duplicate handling)
 * Added ``file_renames`` parameter to ``sync_pair()`` - rename files during upload (useful for duplicate handling)
 
+**Force Upload/Download**
+
+* Added ``force_upload`` parameter to ``sync_pair()`` - bypass hash/size comparison and upload all source files even when they match remote files
+* Added ``force_download`` parameter to ``sync_pair()`` - bypass hash/size comparison and download all destination files even when they match local files
+* Perfect for implementing "replace" duplicate handling strategies
+* Works with all sync modes: ``SOURCE_TO_DESTINATION``, ``SOURCE_BACKUP``, ``DESTINATION_TO_SOURCE``, ``DESTINATION_BACKUP``, ``TWO_WAY``
+* Still respects ``files_to_skip`` and ``file_renames`` parameters
+* In ``TWO_WAY`` mode, ``force_upload`` takes precedence when both flags are set
+
 API Changes
 ~~~~~~~~~~~
 
@@ -44,6 +53,13 @@ API Changes
        file_renames={"old.txt": "new.txt"},       # NEW
    )
 
+   # New: sync_pair() with force upload/download
+   stats = engine.sync_pair(
+       pair,
+       force_upload=True,    # NEW: Force upload all files
+       force_download=False, # NEW: Force download all files
+   )
+
 Benefits
 ~~~~~~~~
 
@@ -52,6 +68,8 @@ Benefits
 * **Error handling**: Failed uploads are immediately visible with error messages
 * **Duplicate handling**: Skip or rename conflicting files during upload
 * **Direct folder uploads**: Upload into specific folders without path resolution overhead
+* **Replace operations**: Force re-upload/re-download files even when content is identical
+* **Flexible control**: Choose between smart comparison or forced operations per use case
 
 Improvements
 ~~~~~~~~~~~~
@@ -113,6 +131,23 @@ Migration Guide
        parent_id=1234,  # Upload into folder 1234
    )
 
+**New API with force upload/download:**
+
+.. code-block:: python
+
+   # Force upload for replace operations
+   stats = engine.sync_pair(
+       pair,
+       force_upload=True,  # Upload all files, bypassing comparison
+       files_to_skip={"temp.txt"},  # Still skip these
+   )
+
+   # Force download for refresh operations
+   stats = engine.sync_pair(
+       pair_download,
+       force_download=True,  # Download all files, bypassing comparison
+   )
+
 Documentation
 ~~~~~~~~~~~~~
 
@@ -123,7 +158,15 @@ Documentation
 Testing
 ~~~~~~~
 
-* All 433 existing tests pass
+* All 438 tests pass (433 existing + 5 new for force upload/download)
+* New tests cover:
+
+  * Force upload in incremental mode
+  * Force upload respects files_to_skip parameter
+  * Force upload in traditional (TWO_WAY) mode
+  * Force download in traditional (TWO_WAY) mode
+  * Force flags precedence behavior (force_upload takes precedence)
+
 * No regressions introduced
 * Production-ready and battle-tested
 
