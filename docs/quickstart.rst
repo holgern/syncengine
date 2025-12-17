@@ -161,29 +161,141 @@ Exclude files from sync using gitignore-style patterns:
 Progress Tracking
 -----------------
 
-Monitor sync progress with callbacks:
+Monitor sync progress with real-time file-level callbacks:
 
 .. code-block:: python
 
-   from syncengine import SyncProgressTracker, SyncProgressEvent
+   from syncengine import SyncProgressTracker, SyncProgressEvent, SyncProgressInfo
 
-   def on_progress(event: SyncProgressEvent):
-       if event.type == "upload_progress":
-           print(f"Uploading {event.file_path}: {event.bytes_transferred}/{event.total_bytes}")
-       elif event.type == "download_progress":
-           print(f"Downloading {event.file_path}: {event.bytes_transferred}/{event.total_bytes}")
-       elif event.type == "complete":
-           print(f"Sync complete: {event.stats}")
+   def on_progress(info: SyncProgressInfo):
+       if info.event == SyncProgressEvent.UPLOAD_FILE_START:
+           print(f"Uploading: {info.file_path}")
+
+       elif info.event == SyncProgressEvent.UPLOAD_FILE_PROGRESS:
+           progress = (info.current_file_bytes / info.current_file_total * 100) if info.current_file_total > 0 else 0
+           print(f"  Progress: {progress:.1f}% ({info.current_file_bytes}/{info.current_file_total} bytes)")
+
+       elif info.event == SyncProgressEvent.UPLOAD_FILE_COMPLETE:
+           print(f"  Complete: {info.file_path}")
+
+       elif info.event == SyncProgressEvent.UPLOAD_FILE_ERROR:
+           print(f"  Error: {info.file_path} - {info.error_message}")
 
    # Create progress tracker
    tracker = SyncProgressTracker(callback=on_progress)
 
-   # Use with engine
+   # Use with sync_pair
+   stats = engine.sync_pair(
+       pair,
+       sync_progress_tracker=tracker
+   )
+
+Advanced Upload Options
+-----------------------
+
+SyncEngine v0.2.0 adds advanced upload control features:
+
+Upload to Specific Folder ID
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Upload directly into a folder without path resolution:
+
+.. code-block:: python
+
+   from syncengine import SyncPair, SyncMode
+   from pathlib import Path
+
+   # Upload into folder ID 1234
+   pair = SyncPair(
+       source=Path("/home/user/documents"),
+       destination="/remote_folder",
+       sync_mode=SyncMode.SOURCE_TO_DESTINATION,
+       storage_id=0,
+       parent_id=1234,  # Upload directly into this folder
+   )
+
+   stats = engine.sync_pair(pair)
+
+Skip Specific Files
+~~~~~~~~~~~~~~~~~~~
+
+Skip files during upload (useful for duplicate handling):
+
+.. code-block:: python
+
+   # Skip specific files
+   files_to_skip = {
+       "folder/duplicate1.txt",
+       "folder/duplicate2.txt",
+   }
+
+   stats = engine.sync_pair(
+       pair,
+       files_to_skip=files_to_skip
+   )
+
+Rename Files During Upload
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Rename files during upload (useful for duplicate handling):
+
+.. code-block:: python
+
+   # Rename files during upload
+   file_renames = {
+       "old_name.txt": "new_name.txt",
+       "folder/old.txt": "folder/renamed.txt",
+   }
+
+   stats = engine.sync_pair(
+       pair,
+       file_renames=file_renames
+   )
+
+Complete Example with All Features
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   from pathlib import Path
+   from syncengine import SyncEngine, SyncPair, SyncMode
+   from syncengine import SyncProgressTracker, SyncProgressEvent, SyncProgressInfo
+
+   def progress_callback(info: SyncProgressInfo):
+       """Display upload progress."""
+       if info.event == SyncProgressEvent.UPLOAD_FILE_START:
+           print(f"⬆️  Uploading: {info.file_path}")
+       elif info.event == SyncProgressEvent.UPLOAD_FILE_COMPLETE:
+           print(f"✓ Complete: {info.file_path}")
+
+   # Create sync engine
    engine = SyncEngine(
        client=dest_client,
-       entries_manager_factory=lambda c, sid: FileEntriesManager(c),
-       progress_tracker=tracker
+       entries_manager_factory=lambda c, sid: FileEntriesManager(c)
    )
+
+   # Create sync pair with parent_id
+   pair = SyncPair(
+       source=Path("/home/user/documents"),
+       destination="/backup",
+       sync_mode=SyncMode.SOURCE_TO_DESTINATION,
+       storage_id=0,
+       parent_id=1234,  # Upload into specific folder
+   )
+
+   # Create progress tracker
+   tracker = SyncProgressTracker(callback=progress_callback)
+
+   # Execute with all features
+   stats = engine.sync_pair(
+       pair,
+       sync_progress_tracker=tracker,
+       files_to_skip={"temp.txt"},
+       file_renames={"old.txt": "new.txt"},
+       max_workers=4,
+   )
+
+   print(f"Uploaded: {stats['uploads']} files")
 
 State Management
 ----------------

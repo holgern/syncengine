@@ -77,6 +77,14 @@ conflicts, and provides multiple synchronization modes to fit different use case
   - Include/exclude specific files or directories
   - Control what gets synchronized
 
+- **Progress Tracking** ✨ NEW
+
+  - Real-time file-level progress events
+  - Byte-level transfer progress with speed and ETA
+  - Per-folder statistics
+  - Thread-safe for parallel operations
+  - Rich progress bar support
+
 - **Protocol Agnostic**
   - Works with any storage backend (local, S3, FTP, custom protocols)
   - Pluggable storage interface
@@ -148,6 +156,7 @@ For detailed API documentation, see the individual module docstrings:
 
 - `syncengine/engine.py` - Main sync engine
 - `syncengine/modes.py` - Sync mode definitions
+- `syncengine/progress.py` - Progress tracking API ✨ NEW
 - `syncengine/comparator.py` - Change detection logic
 - `syncengine/protocols.py` - Storage protocol interfaces
 - `syncengine/config.py` - Configuration options

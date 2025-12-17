@@ -133,7 +133,7 @@ Advanced Examples
 Progress Tracking with Rich UI
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
 
-Monitor sync progress with a rich terminal UI:
+Monitor sync progress with a rich terminal UI using the new v0.2.0 progress tracking API:
 
 .. code-block:: python
 
@@ -142,106 +142,213 @@ Monitor sync progress with a rich terminal UI:
        SyncMode,
        SyncPair,
        SyncProgressTracker,
-       SyncProgressEvent
+       SyncProgressEvent,
+       SyncProgressInfo
    )
-   from rich.console import Console
-   from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
+   from rich.progress import (
+       Progress,
+       SpinnerColumn,
+       TextColumn,
+       BarColumn,
+       DownloadColumn,
+       TransferSpeedColumn,
+       TimeRemainingColumn
+   )
+   from pathlib import Path
 
-   class RichProgressUI:
-       """Rich terminal UI for sync progress."""
-
-       def __init__(self):
-           self.console = Console()
-           self.progress = Progress(
-               SpinnerColumn(),
-               TextColumn("[progress.description]{task.description}"),
-               BarColumn(),
-               TextColumn("[progress.percentage]{task.percentage:>3.0f}%"),
-               console=self.console
-           )
-           self.current_task = None
-
-       def on_progress(self, event: SyncProgressEvent):
-           """Handle progress events."""
-           if event.type == "scan_start":
-               self.console.print("[bold blue]Starting file scan...[/]")
-
-           elif event.type == "scan_complete":
-               self.console.print(
-                   f"[bold green]Scan complete:[/] {event.total} files"
-               )
-
-           elif event.type == "sync_start":
-               self.console.print(
-                   f"[bold blue]Starting sync of {event.total_files} files...[/]"
-               )
-               self.progress.start()
-
-           elif event.type == "upload_start":
-               self.current_task = self.progress.add_task(
-                   f"Uploading {event.file_path}",
-                   total=event.file_size
-               )
-
-           elif event.type == "upload_progress":
-               self.progress.update(
-                   self.current_task,
-                   completed=event.bytes_transferred
-               )
-
-           elif event.type == "upload_complete":
-               self.progress.remove_task(self.current_task)
-
-           elif event.type == "download_start":
-               self.current_task = self.progress.add_task(
-                   f"Downloading {event.file_path}",
-                   total=event.file_size
-               )
-
-           elif event.type == "download_progress":
-               self.progress.update(
-                   self.current_task,
-                   completed=event.bytes_transferred
-               )
-
-           elif event.type == "download_complete":
-               self.progress.remove_task(self.current_task)
-
-           elif event.type == "sync_complete":
-               self.progress.stop()
-               self.console.print("\n[bold green]Sync complete![/]")
-               self.console.print(f"  Uploaded: {event.stats['uploads']}")
-               self.console.print(f"  Downloaded: {event.stats['downloads']}")
-               self.console.print(f"  Deleted: {event.stats['deletes']}")
-
-   def sync_with_progress():
+   def sync_with_rich_progress():
        """Sync with rich progress UI."""
 
-       # Create UI and progress tracker
-       ui = RichProgressUI()
-       tracker = SyncProgressTracker(callback=ui.on_progress)
+       # Create Rich progress display
+       progress = Progress(
+           SpinnerColumn(),
+           TextColumn("[bold blue]{task.description}"),
+           BarColumn(),
+           DownloadColumn(),
+           TransferSpeedColumn(),
+           TimeRemainingColumn(),
+       )
 
-       # Create sync engine with progress tracker
+       progress.start()
+
+       # Track tasks by directory
+       tasks = {}
+
+       def progress_callback(info: SyncProgressInfo):
+           """Handle progress events."""
+
+           if info.event == SyncProgressEvent.SCAN_DIR_START:
+               print(f"📁 Scanning: {info.directory}")
+
+           elif info.event == SyncProgressEvent.UPLOAD_BATCH_START:
+               # Starting batch upload for a folder
+               task = progress.add_task(
+                   f"Uploading {info.directory}",
+                   total=info.folder_bytes_total
+               )
+               tasks[info.directory] = task
+
+           elif info.event == SyncProgressEvent.UPLOAD_FILE_PROGRESS:
+               # File upload progress
+               task_id = tasks.get(info.directory)
+               if task_id is not None:
+                   progress.update(
+                       task_id,
+                       completed=info.folder_bytes_uploaded,
+                       description=f"Uploading {info.file_path}",
+                   )
+
+           elif info.event == SyncProgressEvent.UPLOAD_FILE_ERROR:
+               print(f"❌ Error: {info.file_path} - {info.error_message}")
+
+           elif info.event == SyncProgressEvent.UPLOAD_BATCH_COMPLETE:
+               # Batch complete
+               if info.directory in tasks:
+                   progress.remove_task(tasks[info.directory])
+                   del tasks[info.directory]
+
+       # Create progress tracker
+       tracker = SyncProgressTracker(callback=progress_callback)
+
+       # Create sync engine
        engine = SyncEngine(
            client=dest_client,
-           entries_manager_factory=create_entries_manager,
-           progress_tracker=tracker
+           entries_manager_factory=create_entries_manager
        )
 
        # Create sync pair
        pair = SyncPair(
-           source_root="/home/user/documents",
-           destination_root="/backup/documents",
-           source_client=source_client,
-           destination_client=dest_client,
-           mode=SyncMode.TWO_WAY
+           source=Path("/home/user/documents"),
+           destination="/backup/documents",
+           sync_mode=SyncMode.SOURCE_TO_DESTINATION,
+           storage_id=0
        )
 
-       # Perform sync
-       stats = engine.sync_pair(pair)
+       try:
+           # Perform sync with progress tracking
+           stats = engine.sync_pair(
+               pair,
+               sync_progress_tracker=tracker,
+               max_workers=4
+           )
+
+           print(f"\n✓ Sync complete!")
+           print(f"  Uploaded: {stats['uploads']} files")
+           print(f"  Errors: {stats.get('errors', 0)} files")
+
+       finally:
+           progress.stop()
 
    if __name__ == "__main__":
-       sync_with_progress()
+       sync_with_rich_progress()
+
+Upload with Skip and Rename
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Upload files with duplicate handling using skip and rename features (new in v0.2.0):
+
+.. code-block:: python
+
+   from syncengine import (
+       SyncEngine,
+       SyncMode,
+       SyncPair,
+       SyncProgressTracker,
+       SyncProgressEvent,
+       SyncProgressInfo
+   )
+   from pathlib import Path
+
+   def upload_with_duplicate_handling():
+       """Upload with skip and rename support."""
+
+       # Files to skip (e.g., duplicates)
+       files_to_skip = {
+           "folder/duplicate1.txt",
+           "folder/duplicate2.txt",
+       }
+
+       # Files to rename during upload
+       file_renames = {
+           "old_name.txt": "new_name.txt",
+           "folder/conflict.txt": "folder/conflict_renamed.txt",
+       }
+
+       # Simple progress callback
+       def progress_callback(info: SyncProgressInfo):
+           if info.event == SyncProgressEvent.UPLOAD_FILE_START:
+               print(f"⬆️  Uploading: {info.file_path}")
+           elif info.event == SyncProgressEvent.UPLOAD_FILE_COMPLETE:
+               print(f"✓ Complete: {info.file_path}")
+
+       # Create progress tracker
+       tracker = SyncProgressTracker(callback=progress_callback)
+
+       # Create sync engine
+       engine = SyncEngine(
+           client=dest_client,
+           entries_manager_factory=create_entries_manager
+       )
+
+       # Create sync pair
+       pair = SyncPair(
+           source=Path("/home/user/documents"),
+           destination="/backup",
+           sync_mode=SyncMode.SOURCE_TO_DESTINATION,
+           storage_id=0
+       )
+
+       # Execute with skip and rename
+       stats = engine.sync_pair(
+           pair,
+           sync_progress_tracker=tracker,
+           files_to_skip=files_to_skip,      # Skip these files
+           file_renames=file_renames,        # Rename during upload
+           max_workers=4,
+       )
+
+       print(f"\n✓ Upload complete!")
+       print(f"  Uploaded: {stats['uploads']} files")
+       print(f"  Skipped: {stats.get('skips', 0)} files")
+
+   if __name__ == "__main__":
+       upload_with_duplicate_handling()
+
+Upload to Specific Folder ID
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Upload directly into a specific folder without path resolution (new in v0.2.0):
+
+.. code-block:: python
+
+   from syncengine import SyncEngine, SyncMode, SyncPair
+   from pathlib import Path
+
+   def upload_to_folder_id():
+       """Upload into folder ID 1234."""
+
+       # Create sync engine
+       engine = SyncEngine(
+           client=dest_client,
+           entries_manager_factory=create_entries_manager
+       )
+
+       # Create sync pair with parent_id
+       pair = SyncPair(
+           source=Path("/home/user/documents"),
+           destination="/remote_folder",
+           sync_mode=SyncMode.SOURCE_TO_DESTINATION,
+           storage_id=0,
+           parent_id=1234,  # Upload into this folder
+       )
+
+       # Execute upload
+       stats = engine.sync_pair(pair)
+
+       print(f"Uploaded: {stats['uploads']} files into folder 1234")
+
+   if __name__ == "__main__":
+       upload_to_folder_id()
 
 Pause/Resume/Cancel Support
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~

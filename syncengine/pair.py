@@ -50,6 +50,10 @@ class SyncPair:
     storage_id: int = 0
     """Storage/workspace ID (0 for personal/default storage)"""
 
+    parent_id: Optional[int] = None
+    """Optional parent folder ID for uploads. If specified, files will be uploaded
+    into this folder instead of creating/using a folder based on destination path."""
+
     @property
     def use_source_trash(self) -> bool:
         """Whether to use source trash for deleted files."""
@@ -112,6 +116,7 @@ class SyncPair:
             ignore=data.get("ignore", []),
             exclude_dot_files=data.get("excludeDotFiles", False),
             storage_id=data.get("storageId", 0),
+            parent_id=data.get("parentId"),
         )
 
     def to_dict(self) -> dict:
@@ -130,6 +135,7 @@ class SyncPair:
             "ignore": self.ignore,
             "excludeDotFiles": self.exclude_dot_files,
             "storageId": self.storage_id,
+            "parentId": self.parent_id,
         }
 
     @classmethod

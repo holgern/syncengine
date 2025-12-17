@@ -13,6 +13,7 @@ SyncEngine Documentation
    api_reference
    examples
    benchmarks
+   changelog
 
 Welcome to SyncEngine
 ---------------------
@@ -28,6 +29,8 @@ Key Features
 * **State Management**: Persistent state tracking across sync sessions, resume interrupted syncs
 * **Pattern-based Filtering**: Gitignore-style ignore patterns for fine-grained control
 * **Protocol Agnostic**: Works with any storage backend through pluggable storage interfaces
+* **Progress Tracking**: Real-time file-level progress with byte-level tracking, transfer speed, and ETA
+* **Advanced Upload Control**: Skip specific files, rename during upload, and upload directly to folder IDs
 
 Quick Example
 -------------

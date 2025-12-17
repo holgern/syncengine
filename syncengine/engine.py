@@ -173,6 +173,8 @@ class SyncEngine:
         max_workers: int = 1,
         start_delay: float = 0.0,
         sync_progress_tracker: Optional[SyncProgressTracker] = None,
+        files_to_skip: Optional[set[str]] = None,
+        file_renames: Optional[dict[str, str]] = None,
     ) -> dict:
         """Sync a single sync pair.
 
@@ -190,6 +192,9 @@ class SyncEngine:
                         (default: 0.0, useful for preventing server overload)
             sync_progress_tracker: Optional progress tracker for detailed progress
                                   events (directory scans, file uploads, etc.)
+            files_to_skip: Optional set of relative paths to skip (duplicate
+                          handling)
+            file_renames: Optional dict mapping original paths to renamed paths
 
         Returns:
             Dictionary with sync statistics
@@ -232,6 +237,8 @@ class SyncEngine:
                 max_workers,
                 start_delay,
                 sync_progress_tracker,
+                files_to_skip,
+                file_renames,
             )
         elif use_streaming and not dry_run and pair.sync_mode.requires_destination_scan:
             # Use streaming mode for other modes (not dry-run)
@@ -574,6 +581,8 @@ class SyncEngine:
         max_workers: int,
         start_delay: float = 0.0,
         sync_progress_tracker: Optional[SyncProgressTracker] = None,
+        files_to_skip: Optional[set[str]] = None,
+        file_renames: Optional[dict[str, str]] = None,
     ) -> dict:
         """Incremental sync: process directories level by level.
 
@@ -598,12 +607,19 @@ class SyncEngine:
             max_workers: Number of parallel workers
             start_delay: Delay in seconds between starting each parallel operation
             sync_progress_tracker: Optional progress tracker for detailed events
+            files_to_skip: Optional set of relative paths to skip (duplicate
+                          handling)
+            file_renames: Optional dict mapping original paths to renamed paths
 
         Returns:
             Dictionary with sync statistics
         """
         start_time = time.time()
         logger.debug(f"Starting incremental sync at {start_time:.2f}")
+
+        # Initialize skip/rename parameters
+        files_to_skip = files_to_skip or set()
+        file_renames = file_renames or {}
 
         if not self.output.quiet:
             mode_str = "dry-run " if dry_run else ""
@@ -622,7 +638,12 @@ class SyncEngine:
 
         # Setup remote folder and get existing files
         # When remote is "/" or empty, files sync directly to cloud root (folder_id=0)
-        remote_folder_id = self._setup_incremental_remote(pair, manager, dry_run)
+        # If pair.parent_id is set, use that directly instead of resolving path
+        if pair.parent_id is not None:
+            remote_folder_id = pair.parent_id
+            logger.debug(f"Using parent_id from pair: {remote_folder_id}")
+        else:
+            remote_folder_id = self._setup_incremental_remote(pair, manager, dry_run)
         logger.debug(
             f"Remote folder setup: remote='{pair.destination}', "
             f"folder_id={remote_folder_id}, dry_run={dry_run}"
@@ -705,6 +726,8 @@ class SyncEngine:
                 max_workers=max_workers,
                 start_delay=start_delay,
                 sync_progress_tracker=sync_progress_tracker,
+                files_to_skip=files_to_skip,
+                file_renames=file_renames,
             )
 
             # Track local files seen
@@ -878,6 +901,8 @@ class SyncEngine:
         max_workers: int,
         start_delay: float,
         sync_progress_tracker: Optional[SyncProgressTracker],
+        files_to_skip: Optional[set[str]] = None,
+        file_renames: Optional[dict[str, str]] = None,
     ) -> dict:
         """Process a single directory in incremental sync.
 
@@ -895,12 +920,18 @@ class SyncEngine:
             max_workers: Number of parallel workers
             start_delay: Delay between parallel operations
             sync_progress_tracker: Optional progress tracker
+            files_to_skip: Optional set of relative paths to skip
+            file_renames: Optional dict mapping original paths to renamed paths
 
         Returns:
             Dictionary with 'subdirs' (list of Path), 'files_count' (int),
             and 'local_files' (list of relative paths)
         """
         result: dict = {"subdirs": [], "files_count": 0, "local_files": []}
+
+        # Initialize skip/rename parameters
+        files_to_skip = files_to_skip or set()
+        file_renames = file_renames or {}
 
         # Calculate relative directory path
         rel_dir = (
@@ -947,9 +978,19 @@ class SyncEngine:
         # Track all local files for deletion detection
         result["local_files"] = [f.relative_path for f in files]
 
+        # Apply files_to_skip filtering
+        files_after_skip = []
+        skip_count_from_filter = 0
+        for f in files:
+            if f.relative_path in files_to_skip:
+                skip_count_from_filter += 1
+                stats["skips"] += 1
+            else:
+                files_after_skip.append(f)
+
         # Filter and process files
         upload_files, skipped_count = self._filter_files_for_upload(
-            files, remote_file_set, remote_file_sizes, stats
+            files_after_skip, remote_file_set, remote_file_sizes, stats
         )
 
         # Notify tracker about skipped files
@@ -992,6 +1033,7 @@ class SyncEngine:
             max_workers=max_workers,
             start_delay=start_delay,
             sync_progress_tracker=sync_progress_tracker,
+            file_renames=file_renames,
         )
 
         return result
@@ -1047,6 +1089,7 @@ class SyncEngine:
         max_workers: int,
         start_delay: float,
         sync_progress_tracker: Optional[SyncProgressTracker],
+        file_renames: Optional[dict[str, str]] = None,
     ) -> None:
         """Execute uploads for a batch of files in incremental sync.
 
@@ -1062,18 +1105,27 @@ class SyncEngine:
             max_workers: Number of parallel workers
             start_delay: Delay between parallel operations
             sync_progress_tracker: Optional progress tracker
+            file_renames: Optional dict mapping original paths to renamed paths
         """
-        # Create upload decisions
-        upload_decisions = [
-            SyncDecision(
-                action=SyncAction.UPLOAD,
-                reason="New local file",
-                source_file=local_file,
-                destination_file=None,
-                relative_path=local_file.relative_path,
+        # Initialize file_renames
+        file_renames = file_renames or {}
+
+        # Create upload decisions with rename mapping applied
+        upload_decisions = []
+        for local_file in upload_files:
+            # Apply rename if specified
+            upload_path = file_renames.get(
+                local_file.relative_path, local_file.relative_path
             )
-            for local_file in upload_files
-        ]
+            upload_decisions.append(
+                SyncDecision(
+                    action=SyncAction.UPLOAD,
+                    reason="New local file",
+                    source_file=local_file,
+                    destination_file=None,
+                    relative_path=upload_path,
+                )
+            )
 
         batch_total_bytes = sum(f.size for f in upload_files)
 

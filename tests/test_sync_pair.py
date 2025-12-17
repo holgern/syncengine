@@ -135,6 +135,7 @@ class TestSyncPair:
             "ignore": ["*.log"],
             "excludeDotFiles": True,
             "storageId": 5,
+            "parentId": None,
         }
 
     def test_parse_literal_simple(self):
