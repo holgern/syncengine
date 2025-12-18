@@ -161,7 +161,10 @@ Exclude files from sync using gitignore-style patterns:
 Progress Tracking
 -----------------
 
-Monitor sync progress with real-time file-level callbacks:
+Monitor sync progress with real-time file-level callbacks for both uploads and downloads:
+
+Upload Progress Tracking
+~~~~~~~~~~~~~~~~~~~~~~~~~
 
 .. code-block:: python
 
@@ -189,6 +192,48 @@ Monitor sync progress with real-time file-level callbacks:
        pair,
        sync_progress_tracker=tracker
    )
+
+Download Progress Tracking
+~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Track folder downloads with the same level of detail:
+
+.. code-block:: python
+
+   from pathlib import Path
+   from syncengine import SyncProgressTracker, SyncProgressEvent, SyncProgressInfo
+
+   def on_download_progress(info: SyncProgressInfo):
+       if info.event == SyncProgressEvent.DOWNLOAD_BATCH_START:
+           print(f"Starting download: {info.directory} ({info.folder_bytes_total} bytes)")
+
+       elif info.event == SyncProgressEvent.DOWNLOAD_FILE_START:
+           print(f"  Downloading: {info.file_path}")
+
+       elif info.event == SyncProgressEvent.DOWNLOAD_FILE_PROGRESS:
+           progress = (info.current_file_bytes / info.current_file_total * 100) if info.current_file_total > 0 else 0
+           print(f"    Progress: {progress:.1f}%")
+
+       elif info.event == SyncProgressEvent.DOWNLOAD_FILE_COMPLETE:
+           print(f"  ✓ Complete: {info.file_path}")
+
+       elif info.event == SyncProgressEvent.DOWNLOAD_FILE_ERROR:
+           print(f"  ✗ Error: {info.file_path} - {info.error_message}")
+
+       elif info.event == SyncProgressEvent.DOWNLOAD_BATCH_COMPLETE:
+           print(f"Batch complete: {info.folder_files_downloaded} files downloaded")
+
+   # Create progress tracker
+   tracker = SyncProgressTracker(callback=on_download_progress)
+
+   # Download folder with progress tracking
+   stats = engine.download_folder(
+       destination_path="/remote/folder",
+       local_path=Path("/local/downloads"),
+       sync_progress_tracker=tracker
+   )
+
+   print(f"Downloaded {stats['downloads']} files")
 
 Advanced Upload Options
 -----------------------

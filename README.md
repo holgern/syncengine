@@ -77,13 +77,14 @@ conflicts, and provides multiple synchronization modes to fit different use case
   - Include/exclude specific files or directories
   - Control what gets synchronized
 
-- **Progress Tracking** ✨ NEW
+- **Progress Tracking** ✨ ENHANCED
 
-  - Real-time file-level progress events
+  - Real-time file-level progress events for uploads **and downloads**
   - Byte-level transfer progress with speed and ETA
   - Per-folder statistics
   - Thread-safe for parallel operations
   - Rich progress bar support
+  - Supports both `sync_pair()` and `download_folder()` methods
 
 - **Force Upload/Download** ✨ NEW
 
@@ -120,6 +121,40 @@ pair = SyncPair(
 # Perform sync
 stats = engine.sync_pair(pair)
 print(f"Uploaded: {stats['uploads']}, Downloaded: {stats['downloads']}")
+```
+
+### Progress Tracking Example
+
+Track upload and download progress in real-time:
+
+```python
+from syncengine import SyncProgressTracker, SyncProgressEvent
+from pathlib import Path
+
+def progress_callback(info):
+    # Track uploads
+    if info.event == SyncProgressEvent.UPLOAD_FILE_START:
+        print(f"⬆️  Uploading: {info.file_path}")
+    elif info.event == SyncProgressEvent.UPLOAD_FILE_COMPLETE:
+        print(f"✓ Uploaded: {info.file_path}")
+
+    # Track downloads
+    elif info.event == SyncProgressEvent.DOWNLOAD_FILE_START:
+        print(f"⬇️  Downloading: {info.file_path}")
+    elif info.event == SyncProgressEvent.DOWNLOAD_FILE_COMPLETE:
+        print(f"✓ Downloaded: {info.file_path}")
+
+tracker = SyncProgressTracker(callback=progress_callback)
+
+# Use with sync operations
+stats = engine.sync_pair(pair, sync_progress_tracker=tracker)
+
+# Use with folder downloads
+stats = engine.download_folder(
+    destination_path="/remote/folder",
+    local_path=Path("/local/downloads"),
+    sync_progress_tracker=tracker
+)
 ```
 
 ## When to Use Each Sync Mode
@@ -159,18 +194,27 @@ python benchmarks/run_benchmarks.py
 
 ## Documentation
 
-For detailed API documentation, see the individual module docstrings:
+Full documentation is available at [Read the Docs](https://syncengine.readthedocs.io):
 
-- `syncengine/engine.py` - Main sync engine with force upload/download support ✨
-  UPDATED
+- [Quickstart Guide](https://syncengine.readthedocs.io/en/latest/quickstart.html) - Get
+  started in minutes
+- [API Reference](https://syncengine.readthedocs.io/en/latest/api_reference.html) -
+  Complete API documentation
+- [Examples](https://syncengine.readthedocs.io/en/latest/examples.html) - Real-world
+  usage examples
+- [Sync Modes](https://syncengine.readthedocs.io/en/latest/sync_modes.html) -
+  Understanding sync strategies
+- [Changelog](https://syncengine.readthedocs.io/en/latest/changelog.html) - Version
+  history and updates
+
+### Key Modules
+
+- `syncengine/engine.py` - Main sync engine with force upload/download support
 - `syncengine/modes.py` - Sync mode definitions
-- `syncengine/progress.py` - Progress tracking API ✨ NEW
-- `syncengine/comparator.py` - Change detection and force comparison logic ✨ UPDATED
+- `syncengine/progress.py` - Progress tracking API with upload/download event support
+- `syncengine/comparator.py` - Change detection and force comparison logic
 - `syncengine/protocols.py` - Storage protocol interfaces
 - `syncengine/config.py` - Configuration options
-
-See `PYDRIME_INTEGRATION_GUIDE.md` for detailed guide on integrating force
-upload/download features.
 
 ## Contributing
 

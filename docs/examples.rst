@@ -135,6 +135,9 @@ Progress Tracking with Rich UI
 
 Monitor sync progress with a rich terminal UI using the new v0.2.0 progress tracking API:
 
+Upload Progress with Rich UI
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
 .. code-block:: python
 
    from syncengine import (
@@ -241,6 +244,185 @@ Monitor sync progress with a rich terminal UI using the new v0.2.0 progress trac
 
    if __name__ == "__main__":
        sync_with_rich_progress()
+
+Download Progress with Rich UI
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Monitor folder downloads with rich progress UI:
+
+.. code-block:: python
+
+   from syncengine import (
+       SyncEngine,
+       SyncProgressTracker,
+       SyncProgressEvent,
+       SyncProgressInfo
+   )
+   from rich.progress import (
+       Progress,
+       SpinnerColumn,
+       TextColumn,
+       BarColumn,
+       DownloadColumn,
+       TransferSpeedColumn,
+       TimeRemainingColumn
+   )
+   from pathlib import Path
+
+   def download_with_rich_progress():
+       """Download folder with rich progress UI."""
+
+       # Create Rich progress display
+       progress = Progress(
+           SpinnerColumn(),
+           TextColumn("[bold green]{task.description}"),
+           BarColumn(),
+           DownloadColumn(),
+           TransferSpeedColumn(),
+           TimeRemainingColumn(),
+       )
+
+       progress.start()
+
+       # Track current download task
+       current_task = None
+
+       def progress_callback(info: SyncProgressInfo):
+           """Handle download progress events."""
+           nonlocal current_task
+
+           if info.event == SyncProgressEvent.DOWNLOAD_BATCH_START:
+               # Starting batch download
+               current_task = progress.add_task(
+                   f"Downloading {info.directory}",
+                   total=info.folder_bytes_total
+               )
+
+           elif info.event == SyncProgressEvent.DOWNLOAD_FILE_PROGRESS:
+               # File download progress
+               if current_task is not None:
+                   progress.update(
+                       current_task,
+                       completed=info.folder_bytes_downloaded,
+                       description=f"Downloading {info.file_path}",
+                   )
+
+           elif info.event == SyncProgressEvent.DOWNLOAD_FILE_ERROR:
+               print(f"\n❌ Error: {info.file_path} - {info.error_message}")
+
+           elif info.event == SyncProgressEvent.DOWNLOAD_BATCH_COMPLETE:
+               # Batch complete
+               if current_task is not None:
+                   progress.remove_task(current_task)
+                   current_task = None
+
+       # Create progress tracker
+       tracker = SyncProgressTracker(callback=progress_callback)
+
+       # Create sync engine
+       engine = SyncEngine(
+           client=dest_client,
+           entries_manager_factory=create_entries_manager
+       )
+
+       try:
+           # Download folder with progress tracking
+           stats = engine.download_folder(
+               destination_path="/remote/documents",
+               local_path=Path("/home/user/downloads"),
+               sync_progress_tracker=tracker
+           )
+
+           print(f"\n✓ Download complete!")
+           print(f"  Downloaded: {stats['downloads']} files")
+           print(f"  Errors: {stats.get('errors', 0)} files")
+
+       finally:
+           progress.stop()
+
+   if __name__ == "__main__":
+       download_with_rich_progress()
+
+Combined Upload and Download Progress
+^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Handle both upload and download events in a single callback:
+
+.. code-block:: python
+
+   from syncengine import SyncProgressTracker, SyncProgressEvent, SyncProgressInfo
+   from rich.progress import Progress, SpinnerColumn, TextColumn, BarColumn
+
+   def unified_progress_callback():
+       """Single callback for both upload and download progress."""
+
+       progress = Progress(
+           SpinnerColumn(),
+           TextColumn("[bold]{task.description}"),
+           BarColumn(),
+       )
+
+       progress.start()
+       tasks = {}
+
+       def handle_progress(info: SyncProgressInfo):
+           """Handle both upload and download events."""
+
+           # Upload events
+           if info.event == SyncProgressEvent.UPLOAD_BATCH_START:
+               task = progress.add_task(
+                   f"⬆️  Uploading {info.directory}",
+                   total=info.folder_bytes_total
+               )
+               tasks[('upload', info.directory)] = task
+
+           elif info.event == SyncProgressEvent.UPLOAD_FILE_PROGRESS:
+               task_id = tasks.get(('upload', info.directory))
+               if task_id is not None:
+                   progress.update(task_id, completed=info.folder_bytes_uploaded)
+
+           elif info.event == SyncProgressEvent.UPLOAD_BATCH_COMPLETE:
+               task_id = tasks.get(('upload', info.directory))
+               if task_id is not None:
+                   progress.remove_task(task_id)
+                   del tasks[('upload', info.directory)]
+
+           # Download events
+           elif info.event == SyncProgressEvent.DOWNLOAD_BATCH_START:
+               task = progress.add_task(
+                   f"⬇️  Downloading {info.directory}",
+                   total=info.folder_bytes_total
+               )
+               tasks[('download', info.directory)] = task
+
+           elif info.event == SyncProgressEvent.DOWNLOAD_FILE_PROGRESS:
+               task_id = tasks.get(('download', info.directory))
+               if task_id is not None:
+                   progress.update(task_id, completed=info.folder_bytes_downloaded)
+
+           elif info.event == SyncProgressEvent.DOWNLOAD_BATCH_COMPLETE:
+               task_id = tasks.get(('download', info.directory))
+               if task_id is not None:
+                   progress.remove_task(task_id)
+                   del tasks[('download', info.directory)]
+
+           # Error events
+           elif info.event in (SyncProgressEvent.UPLOAD_FILE_ERROR,
+                              SyncProgressEvent.DOWNLOAD_FILE_ERROR):
+               print(f"\n❌ Error: {info.file_path} - {info.error_message}")
+
+       return handle_progress, progress
+
+   # Usage
+   callback, progress_display = unified_progress_callback()
+   tracker = SyncProgressTracker(callback=callback)
+
+   try:
+       # Use for both sync and download operations
+       engine.sync_pair(pair, sync_progress_tracker=tracker)
+       engine.download_folder(path, local, sync_progress_tracker=tracker)
+   finally:
+       progress_display.stop()
 
 Upload with Skip and Rename
 ~~~~~~~~~~~~~~~~~~~~~~~~~~~~

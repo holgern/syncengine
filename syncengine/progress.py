@@ -26,6 +26,14 @@ class SyncProgressEvent(Enum):
     UPLOAD_FILE_ERROR = "upload_file_error"
     UPLOAD_BATCH_COMPLETE = "upload_batch_complete"
 
+    # Download events
+    DOWNLOAD_BATCH_START = "download_batch_start"
+    DOWNLOAD_FILE_START = "download_file_start"
+    DOWNLOAD_FILE_PROGRESS = "download_file_progress"
+    DOWNLOAD_FILE_COMPLETE = "download_file_complete"
+    DOWNLOAD_FILE_ERROR = "download_file_error"
+    DOWNLOAD_BATCH_COMPLETE = "download_batch_complete"
+
     # Overall sync events
     SYNC_START = "sync_start"
     SYNC_COMPLETE = "sync_complete"
@@ -111,6 +119,12 @@ class SyncProgressTracker:
         self._folder_bytes_total = 0
         self._folder_bytes_uploaded = 0
 
+        # Download tracking
+        self.total_bytes_downloaded = 0
+        self.total_files_downloaded = 0
+        self._folder_files_downloaded = 0
+        self._folder_bytes_downloaded = 0
+
     def reset(self) -> None:
         """Reset all counters."""
         with self.lock:
@@ -125,6 +139,10 @@ class SyncProgressTracker:
             self._folder_files_uploaded = 0
             self._folder_bytes_total = 0
             self._folder_bytes_uploaded = 0
+            self.total_bytes_downloaded = 0
+            self.total_files_downloaded = 0
+            self._folder_files_downloaded = 0
+            self._folder_bytes_downloaded = 0
 
     def _reset_folder_stats(self) -> None:
         """Reset per-folder counters for a new folder."""
@@ -132,6 +150,8 @@ class SyncProgressTracker:
         self._folder_files_uploaded = 0
         self._folder_bytes_total = 0
         self._folder_bytes_uploaded = 0
+        self._folder_files_downloaded = 0
+        self._folder_bytes_downloaded = 0
 
     def add_bytes_to_upload(self, total_bytes: int) -> None:
         """Add bytes to the total bytes to upload.
@@ -378,6 +398,197 @@ class SyncProgressTracker:
                 )
             )
 
+    def on_download_batch_start(
+        self, directory: str, num_files: int, total_bytes: int
+    ) -> None:
+        """Called when starting to download a batch of files.
+
+        Args:
+            directory: Relative path of directory
+            num_files: Number of files to download
+            total_bytes: Total bytes to download in this batch
+        """
+        with self.lock:
+            # Reset folder stats for new folder
+            self._current_folder = directory
+            self._reset_folder_stats()
+            self._folder_files_total = num_files
+            self._folder_bytes_total = total_bytes
+
+        if self.callback:
+            self.callback(
+                SyncProgressInfo(
+                    event=SyncProgressEvent.DOWNLOAD_BATCH_START,
+                    directory=directory,
+                    files_in_batch=num_files,
+                    files_uploaded=self.total_files_downloaded,
+                    bytes_uploaded=self.total_bytes_downloaded,
+                    bytes_total=total_bytes,
+                    folder_files_uploaded=0,
+                    folder_files_total=num_files,
+                    folder_bytes_uploaded=0,
+                    folder_bytes_total=total_bytes,
+                )
+            )
+
+    def on_download_file_start(self, file_path: str, file_size: int) -> None:
+        """Called when starting to download a file.
+
+        Args:
+            file_path: Relative path of file
+            file_size: Size of file in bytes
+        """
+        with self.lock:
+            self._file_bytes[file_path] = 0
+            self._file_totals[file_path] = file_size
+
+        if self.callback:
+            self.callback(
+                SyncProgressInfo(
+                    event=SyncProgressEvent.DOWNLOAD_FILE_START,
+                    file_path=file_path,
+                    current_file_total=file_size,
+                    files_uploaded=self.total_files_downloaded,
+                    bytes_uploaded=self.total_bytes_downloaded,
+                    bytes_total=self.total_bytes_to_upload,
+                )
+            )
+
+    def on_download_file_progress(
+        self, file_path: str, bytes_downloaded: int, total_bytes: int
+    ) -> None:
+        """Called during file download with byte progress.
+
+        Args:
+            file_path: Relative path of file
+            bytes_downloaded: Bytes downloaded so far for this file
+            total_bytes: Total bytes for this file
+        """
+        with self.lock:
+            # Calculate increment
+            prev_bytes = self._file_bytes.get(file_path, 0)
+            increment = bytes_downloaded - prev_bytes
+            self._file_bytes[file_path] = bytes_downloaded
+            self.total_bytes_downloaded += increment
+            self._folder_bytes_downloaded += increment
+
+            current_total = self.total_bytes_downloaded
+            folder_bytes = self._folder_bytes_downloaded
+            folder_bytes_total = self._folder_bytes_total
+            folder_files = self._folder_files_downloaded
+            folder_files_total = self._folder_files_total
+            directory = self._current_folder
+
+        if self.callback:
+            self.callback(
+                SyncProgressInfo(
+                    event=SyncProgressEvent.DOWNLOAD_FILE_PROGRESS,
+                    directory=directory,
+                    file_path=file_path,
+                    current_file_bytes=bytes_downloaded,
+                    current_file_total=total_bytes,
+                    files_uploaded=self.total_files_downloaded,
+                    bytes_uploaded=current_total,
+                    bytes_total=total_bytes,
+                    folder_files_uploaded=folder_files,
+                    folder_files_total=folder_files_total,
+                    folder_bytes_uploaded=folder_bytes,
+                    folder_bytes_total=folder_bytes_total,
+                )
+            )
+
+    def on_download_file_complete(self, file_path: str) -> None:
+        """Called when file download is complete.
+
+        Args:
+            file_path: Relative path of file
+        """
+        with self.lock:
+            self.total_files_downloaded += 1
+            self._folder_files_downloaded += 1
+            # Clean up per-file tracking
+            self._file_bytes.pop(file_path, None)
+            self._file_totals.pop(file_path, None)
+
+            files_downloaded = self.total_files_downloaded
+            bytes_downloaded = self.total_bytes_downloaded
+            folder_files = self._folder_files_downloaded
+            folder_files_total = self._folder_files_total
+            folder_bytes = self._folder_bytes_downloaded
+            folder_bytes_total = self._folder_bytes_total
+            directory = self._current_folder
+
+        if self.callback:
+            self.callback(
+                SyncProgressInfo(
+                    event=SyncProgressEvent.DOWNLOAD_FILE_COMPLETE,
+                    directory=directory,
+                    file_path=file_path,
+                    files_uploaded=files_downloaded,
+                    bytes_uploaded=bytes_downloaded,
+                    bytes_total=0,
+                    folder_files_uploaded=folder_files,
+                    folder_files_total=folder_files_total,
+                    folder_bytes_uploaded=folder_bytes,
+                    folder_bytes_total=folder_bytes_total,
+                )
+            )
+
+    def on_download_file_error(self, file_path: str, error: str) -> None:
+        """Called when file download fails.
+
+        Args:
+            file_path: Relative path of file
+            error: Error message
+        """
+        with self.lock:
+            # Rollback bytes for this file
+            file_bytes = self._file_bytes.pop(file_path, 0)
+            self.total_bytes_downloaded -= file_bytes
+            self._file_totals.pop(file_path, None)
+
+        if self.callback:
+            self.callback(
+                SyncProgressInfo(
+                    event=SyncProgressEvent.DOWNLOAD_FILE_ERROR,
+                    file_path=file_path,
+                    error_message=error,
+                    files_uploaded=self.total_files_downloaded,
+                    bytes_uploaded=self.total_bytes_downloaded,
+                    bytes_total=0,
+                )
+            )
+
+    def on_download_batch_complete(self, directory: str, num_downloaded: int) -> None:
+        """Called when batch download is complete.
+
+        Args:
+            directory: Relative path of directory
+            num_downloaded: Number of files successfully downloaded
+        """
+        with self.lock:
+            folder_files = self._folder_files_downloaded
+            folder_files_total = self._folder_files_total
+            folder_bytes = self._folder_bytes_downloaded
+            folder_bytes_total = self._folder_bytes_total
+
+        if self.callback:
+            self.callback(
+                SyncProgressInfo(
+                    event=SyncProgressEvent.DOWNLOAD_BATCH_COMPLETE,
+                    directory=directory,
+                    files_in_batch=num_downloaded,
+                    files_uploaded=self.total_files_downloaded,
+                    files_skipped=self.total_files_skipped,
+                    bytes_uploaded=self.total_bytes_downloaded,
+                    bytes_total=0,
+                    folder_files_uploaded=folder_files,
+                    folder_files_total=folder_files_total,
+                    folder_bytes_uploaded=folder_bytes,
+                    folder_bytes_total=folder_bytes_total,
+                )
+            )
+
     def create_file_progress_callback(
         self, file_path: str
     ) -> Callable[[int, int], None]:
@@ -395,6 +606,26 @@ class SyncProgressTracker:
 
         def callback(bytes_uploaded: int, total_bytes: int) -> None:
             self.on_upload_file_progress(file_path, bytes_uploaded, total_bytes)
+
+        return callback
+
+    def create_download_progress_callback(
+        self, file_path: str
+    ) -> Callable[[int, int], None]:
+        """Create a byte-level progress callback for downloading a specific file.
+
+        This returns a callback compatible with the existing download API
+        (bytes_downloaded, total_bytes) that internally updates the tracker.
+
+        Args:
+            file_path: Relative path of file being downloaded
+
+        Returns:
+            Progress callback function
+        """
+
+        def callback(bytes_downloaded: int, total_bytes: int) -> None:
+            self.on_download_file_progress(file_path, bytes_downloaded, total_bytes)
 
         return callback
 

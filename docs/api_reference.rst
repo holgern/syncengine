@@ -38,6 +38,23 @@ SyncEngine
       :returns: List of sync statistics for each pair
       :rtype: list[dict[str, int]]
 
+   .. method:: download_folder(destination_path: str, local_path: Path, sync_progress_tracker: Optional[SyncProgressTracker] = None, parallel: bool = False, use_rich_progress: bool = True) -> dict[str, int]
+
+      Download a folder from destination to local filesystem.
+
+      :param str destination_path: Path in destination storage
+      :param Path local_path: Local path to download to
+      :param SyncProgressTracker sync_progress_tracker: Optional progress tracker for monitoring download progress (new in v0.2.0)
+      :param bool parallel: Whether to download files in parallel (default: False)
+      :param bool use_rich_progress: Whether to display Rich progress bar (default: True, automatically disabled when sync_progress_tracker is provided)
+      :returns: Dictionary with download statistics (downloads, errors, etc.)
+      :rtype: dict[str, int]
+
+      .. note::
+
+         When ``sync_progress_tracker`` is provided, the Rich progress bar is automatically disabled to avoid UI conflicts. The tracker will emit detailed download events:
+         ``DOWNLOAD_BATCH_START``, ``DOWNLOAD_FILE_START``, ``DOWNLOAD_FILE_PROGRESS``, ``DOWNLOAD_FILE_COMPLETE``, ``DOWNLOAD_FILE_ERROR``, ``DOWNLOAD_BATCH_COMPLETE``.
+
 SyncPair
 ~~~~~~~~
 
@@ -436,6 +453,57 @@ SyncProgressTracker
 
       :param str file_path: Path of file downloaded
 
+   .. method:: on_download_batch_start(directory: str, num_files: int, total_bytes: int) -> None
+
+      Called when batch download for a folder starts.
+
+      :param str directory: Directory being downloaded
+      :param int num_files: Number of files to download
+      :param int total_bytes: Total bytes to download
+
+   .. method:: on_download_file_start(file_path: str, file_size: int) -> None
+
+      Called when individual file download starts.
+
+      :param str file_path: Path of file being downloaded
+      :param int file_size: Size of file in bytes
+
+   .. method:: on_download_file_progress(file_path: str, bytes_downloaded: int, total_bytes: int) -> None
+
+      Called during file download with progress updates.
+
+      :param str file_path: Path of file being downloaded
+      :param int bytes_downloaded: Bytes downloaded so far
+      :param int total_bytes: Total bytes to download
+
+   .. method:: on_download_file_complete(file_path: str) -> None
+
+      Called when file download completes successfully.
+
+      :param str file_path: Path of file downloaded
+
+   .. method:: on_download_file_error(file_path: str, error: Exception) -> None
+
+      Called when file download fails.
+
+      :param str file_path: Path of file that failed
+      :param Exception error: Error that occurred
+
+   .. method:: on_download_batch_complete(directory: str, num_downloaded: int) -> None
+
+      Called when batch download completes.
+
+      :param str directory: Directory that was downloaded
+      :param int num_downloaded: Number of files successfully downloaded
+
+   .. method:: create_download_progress_callback(file_path: str) -> Callable[[int, int], None]
+
+      Create a progress callback for download operations.
+
+      :param str file_path: Path of file being downloaded
+      :returns: Progress callback function
+      :rtype: Callable[[int, int], None]
+
    .. method:: on_sync_complete(stats: dict[str, int]) -> None
 
       Called when all sync operations complete.
@@ -447,23 +515,136 @@ SyncProgressEvent
 
 .. class:: SyncProgressEvent
 
-   Event object passed to progress callbacks.
+   Event types for progress callbacks.
 
-   .. attribute:: type
+   **Scan Events:**
 
-      Event type string (scan_start, upload_progress, etc.).
+   .. attribute:: SCAN_DIR_START
+
+      Directory scanning started.
+
+   .. attribute:: SCAN_DIR_COMPLETE
+
+      Directory scanning completed.
+
+   **Upload Events:**
+
+   .. attribute:: UPLOAD_BATCH_START
+
+      Batch upload for a folder started.
+
+   .. attribute:: UPLOAD_FILE_START
+
+      Individual file upload started.
+
+   .. attribute:: UPLOAD_FILE_PROGRESS
+
+      File upload progress update.
+
+   .. attribute:: UPLOAD_FILE_COMPLETE
+
+      File upload completed successfully.
+
+   .. attribute:: UPLOAD_FILE_ERROR
+
+      File upload failed.
+
+   .. attribute:: UPLOAD_BATCH_COMPLETE
+
+      Batch upload completed.
+
+   **Download Events:**
+
+   .. attribute:: DOWNLOAD_BATCH_START
+
+      Batch download for a folder started.
+
+   .. attribute:: DOWNLOAD_FILE_START
+
+      Individual file download started.
+
+   .. attribute:: DOWNLOAD_FILE_PROGRESS
+
+      File download progress update.
+
+   .. attribute:: DOWNLOAD_FILE_COMPLETE
+
+      File download completed successfully.
+
+   .. attribute:: DOWNLOAD_FILE_ERROR
+
+      File download failed.
+
+   .. attribute:: DOWNLOAD_BATCH_COMPLETE
+
+      Batch download completed.
+
+SyncProgressInfo
+~~~~~~~~~~~~~~~~
+
+.. class:: SyncProgressInfo
+
+   Progress information object passed to callbacks.
+
+   .. attribute:: event
+
+      Event type (SyncProgressEvent enum value).
 
    .. attribute:: file_path
 
       File path (for file-specific events).
 
-   .. attribute:: bytes_transferred
+   .. attribute:: directory
 
-      Bytes transferred so far.
+      Directory path (for batch events).
 
-   .. attribute:: total_bytes
+   .. attribute:: current_file_bytes
 
-      Total bytes to transfer.
+      Bytes transferred for current file.
+
+   .. attribute:: current_file_total
+
+      Total bytes for current file.
+
+   .. attribute:: folder_bytes_uploaded
+
+      Bytes uploaded in current folder.
+
+   .. attribute:: folder_bytes_downloaded
+
+      Bytes downloaded in current folder.
+
+   .. attribute:: folder_bytes_total
+
+      Total bytes for current folder.
+
+   .. attribute:: folder_files_uploaded
+
+      Files uploaded in current folder.
+
+   .. attribute:: folder_files_downloaded
+
+      Files downloaded in current folder.
+
+   .. attribute:: total_bytes_uploaded
+
+      Total bytes uploaded across all operations.
+
+   .. attribute:: total_bytes_downloaded
+
+      Total bytes downloaded across all operations.
+
+   .. attribute:: total_files_uploaded
+
+      Total files uploaded across all operations.
+
+   .. attribute:: total_files_downloaded
+
+      Total files downloaded across all operations.
+
+   .. attribute:: error_message
+
+      Error message (for error events).
 
    .. attribute:: stats
 

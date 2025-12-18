@@ -13,8 +13,10 @@ New Features
 
 * Added comprehensive file-level progress tracking with byte-level precision
 * New ``SyncProgressTracker`` with callback support for real-time progress monitoring
-* Progress events include: ``SCAN_DIR_START``, ``SCAN_DIR_COMPLETE``, ``UPLOAD_BATCH_START``, ``UPLOAD_FILE_START``, ``UPLOAD_FILE_PROGRESS``, ``UPLOAD_FILE_COMPLETE``, ``UPLOAD_FILE_ERROR``, ``UPLOAD_BATCH_COMPLETE``
+* **Upload progress events**: ``SCAN_DIR_START``, ``SCAN_DIR_COMPLETE``, ``UPLOAD_BATCH_START``, ``UPLOAD_FILE_START``, ``UPLOAD_FILE_PROGRESS``, ``UPLOAD_FILE_COMPLETE``, ``UPLOAD_FILE_ERROR``, ``UPLOAD_BATCH_COMPLETE``
+* **Download progress events**: ``DOWNLOAD_BATCH_START``, ``DOWNLOAD_FILE_START``, ``DOWNLOAD_FILE_PROGRESS``, ``DOWNLOAD_FILE_COMPLETE``, ``DOWNLOAD_FILE_ERROR``, ``DOWNLOAD_BATCH_COMPLETE``
 * Each event provides detailed information via ``SyncProgressInfo`` including file paths, byte counts, transfer speeds, and ETAs
+* Progress tracking now supports both ``sync_pair()`` and ``download_folder()`` methods
 
 **Advanced Upload Control**
 
@@ -65,7 +67,8 @@ Benefits
 
 * **Real-time visibility**: Users see which files are being uploaded/downloaded in real-time
 * **Better UX**: Progress bars show transfer speed, ETA, and byte-level progress
-* **Error handling**: Failed uploads are immediately visible with error messages
+* **Error handling**: Failed uploads and downloads are immediately visible with error messages
+* **Download monitoring**: Track folder downloads with the same level of detail as uploads
 * **Duplicate handling**: Skip or rename conflicting files during upload
 * **Direct folder uploads**: Upload into specific folders without path resolution overhead
 * **Replace operations**: Force re-upload/re-download files even when content is identical
@@ -146,6 +149,25 @@ Migration Guide
    stats = engine.sync_pair(
        pair_download,
        force_download=True,  # Download all files, bypassing comparison
+   )
+
+**New API with download progress tracking:**
+
+.. code-block:: python
+
+   from syncengine import SyncProgressTracker, SyncProgressEvent, SyncProgressInfo
+
+   def progress_callback(info: SyncProgressInfo):
+       if info.event == SyncProgressEvent.DOWNLOAD_FILE_START:
+           print(f"Downloading: {info.file_path}")
+       elif info.event == SyncProgressEvent.DOWNLOAD_FILE_PROGRESS:
+           print(f"  Progress: {info.current_file_bytes}/{info.current_file_total} bytes")
+
+   tracker = SyncProgressTracker(callback=progress_callback)
+   engine.download_folder(
+       destination_path="folder_path",
+       local_path=Path("/local/download"),
+       sync_progress_tracker=tracker  # NEW: Track download progress
    )
 
 Documentation

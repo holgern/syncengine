@@ -3269,6 +3269,7 @@ class SyncEngine:
         pair: SyncPair,
         progress_callback: Optional[Callable[[int, int], None]] = None,
         max_workers: int = 1,
+        sync_progress_tracker: Optional[SyncProgressTracker] = None,
     ) -> dict:
         """Execute download decisions with parallel or sequential processing.
 
@@ -3277,6 +3278,8 @@ class SyncEngine:
             pair: Sync pair configuration
             progress_callback: Optional progress callback
             max_workers: Number of parallel workers (1 = sequential)
+            sync_progress_tracker: Optional progress tracker for
+            detailed progress events
 
         Returns:
             Dictionary with 'downloads' and 'errors' counts
@@ -3285,6 +3288,17 @@ class SyncEngine:
         # Use default constants for chunk sizes
         chunk_size = DEFAULT_CHUNK_SIZE
         multipart_threshold = DEFAULT_MULTIPART_THRESHOLD
+
+        # Emit batch start event if tracker is provided
+        if sync_progress_tracker:
+            batch_total_bytes = sum(
+                d.destination_file.size for d in decisions if d.destination_file
+            )
+            sync_progress_tracker.on_download_batch_start(
+                directory=str(pair.source),
+                num_files=len(decisions),
+                total_bytes=batch_total_bytes,
+            )
 
         if max_workers > 1 and len(decisions) > 1:
             # Parallel execution
@@ -3299,6 +3313,40 @@ class SyncEngine:
             )
             stats["downloads"] = download_stats["downloads"]
             stats["errors"] = len(decisions) - download_stats["downloads"]
+        elif sync_progress_tracker:
+            # Sequential with progress tracker
+            for decision in decisions:
+                if decision.destination_file:
+                    file_path = decision.relative_path
+                    file_size = decision.destination_file.size
+
+                    # Notify file start
+                    sync_progress_tracker.on_download_file_start(file_path, file_size)
+
+                    # Create per-file callback
+                    file_callback = (
+                        sync_progress_tracker.create_download_progress_callback(
+                            file_path
+                        )
+                    )
+
+                    try:
+                        self._execute_single_decision(
+                            decision,
+                            pair,
+                            chunk_size,
+                            multipart_threshold,
+                            file_callback,
+                        )
+                        stats["downloads"] += 1
+                        sync_progress_tracker.on_download_file_complete(file_path)
+                    except Exception as e:
+                        stats["errors"] += 1
+                        sync_progress_tracker.on_download_file_error(file_path, str(e))
+                        if not self.output.quiet:
+                            self.output.error(
+                                f"Failed to download {decision.relative_path}: {e}"
+                            )
         elif not self.output.quiet:
             # Sequential with progress bar
             with self.progress_bar_factory.create_progress_bar() as progress:
@@ -3333,6 +3381,13 @@ class SyncEngine:
                     stats["downloads"] += 1
                 except Exception:
                     stats["errors"] += 1
+
+        # Emit batch complete event if tracker is provided
+        if sync_progress_tracker:
+            sync_progress_tracker.on_download_batch_complete(
+                directory=str(pair.source),
+                num_downloaded=stats["downloads"],
+            )
 
         return stats
 
@@ -3395,6 +3450,7 @@ class SyncEngine:
         overwrite: bool = True,
         max_workers: int = 1,
         progress_callback: Optional[Callable[[int, int], None]] = None,
+        sync_progress_tracker: Optional[SyncProgressTracker] = None,
     ) -> dict:
         """Download a folder and its contents using sync infrastructure.
 
@@ -3410,6 +3466,8 @@ class SyncEngine:
                 not in cloud (DESTINATION_TO_SOURCE mode).
             max_workers: Number of parallel download workers
             progress_callback: Optional callback for progress updates
+            sync_progress_tracker: Optional progress tracker for detailed progress
+                                  events (batch downloads, file downloads, etc.)
 
         Returns:
             Dictionary with download statistics:
@@ -3456,18 +3514,25 @@ class SyncEngine:
         scanner = DirectoryScanner()
 
         # Scan remote folder
-        with self.progress_bar_factory.create_progress_bar() as progress:
-            task = progress.add_task("Scanning remote folder...", total=None)
-
-            # Get all files in the remote folder recursively
+        if sync_progress_tracker:
+            # Scan without Rich progress (external display is active)
             entries_with_paths = manager.get_all_recursive(
                 folder_id=remote_entry.id,
                 path_prefix="",
             )
+        else:
+            with self.progress_bar_factory.create_progress_bar() as progress:
+                task = progress.add_task("Scanning remote folder...", total=None)
 
-            progress.update(
-                task, description=f"Found {len(entries_with_paths)} remote file(s)"
-            )
+                # Get all files in the remote folder recursively
+                entries_with_paths = manager.get_all_recursive(
+                    folder_id=remote_entry.id,
+                    path_prefix="",
+                )
+
+                progress.update(
+                    task, description=f"Found {len(entries_with_paths)} remote file(s)"
+                )
 
         # Convert to RemoteFile objects (filters out folders)
         remote_files = scanner.scan_destination(entries_with_paths)
@@ -3524,6 +3589,7 @@ class SyncEngine:
             temp_pair,
             progress_callback=progress_callback,
             max_workers=max_workers,
+            sync_progress_tracker=sync_progress_tracker,
         )
         stats["downloads"] = download_stats["downloads"]
         stats["errors"] = download_stats["errors"]
