@@ -281,15 +281,40 @@ class FileComparator:
             # Sizes match - check hash if available for content verification
             # Destination files always have a hash from the API
             if destination_file.hash:
-                # For now, we skip hash verification on download as computing
-                # source hash is expensive. The size check is usually sufficient.
-                # TODO: Add optional hash verification flag
-                pass
+                # Compute source file hash for comparison
+                import hashlib
 
-            # Files are likely identical - skip
+                try:
+                    with open(source_file.path, "rb") as f:
+                        source_hash = hashlib.md5(f.read()).hexdigest()
+
+                    if source_hash != destination_file.hash:
+                        # Hashes don't match - files are different
+                        # despite same size (rare case)
+                        if self.sync_mode.allows_upload:
+                            return SyncDecision(
+                                action=SyncAction.UPLOAD,
+                                reason="Content differs (hash mismatch)",
+                                source_file=source_file,
+                                destination_file=destination_file,
+                                relative_path=path,
+                            )
+                        elif self.sync_mode.allows_download:
+                            return SyncDecision(
+                                action=SyncAction.DOWNLOAD,
+                                reason="Content differs (hash mismatch)",
+                                source_file=source_file,
+                                destination_file=destination_file,
+                                relative_path=path,
+                            )
+                except OSError:
+                    # Can't read source file - treat as if sizes match and skip
+                    pass
+
+            # Files are identical (same size and hash) - skip
             return SyncDecision(
                 action=SyncAction.SKIP,
-                reason="Files are identical (same size)",
+                reason="Files are identical (same size and hash)",
                 source_file=source_file,
                 destination_file=destination_file,
                 relative_path=path,

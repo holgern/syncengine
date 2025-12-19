@@ -394,32 +394,40 @@ class SyncStateManager:
         # Also check legacy directory for migration
         self._legacy_dir = state_dir
 
-    def _get_state_key(self, source_path: Path, destination_path: str) -> str:
+    def _get_state_key(
+        self, source_path: Path, destination_path: str, storage_id: Optional[int] = None
+    ) -> str:
         """Generate a unique key for a sync pair.
 
         Args:
             source_path: Source directory path
             destination_path: Destination path
+            storage_id: Optional storage ID to differentiate between storages
 
         Returns:
             Hash-based key for the sync pair
         """
         # Use absolute path for consistency
         source_abs = str(source_path.resolve())
-        combined = f"{source_abs}:{destination_path}"
+        # Include storage_id in key to prevent collisions between different storages
+        storage_suffix = f":storage_{storage_id}" if storage_id is not None else ""
+        combined = f"{source_abs}:{destination_path}{storage_suffix}"
         return hashlib.sha256(combined.encode()).hexdigest()[:16]
 
-    def _get_state_file(self, source_path: Path, destination_path: str) -> Path:
+    def _get_state_file(
+        self, source_path: Path, destination_path: str, storage_id: Optional[int] = None
+    ) -> Path:
         """Get the state file path for a sync pair.
 
         Args:
             source_path: Source directory path
             destination_path: Destination path
+            storage_id: Optional storage ID to differentiate between storages
 
         Returns:
             Path to the state file
         """
-        key = self._get_state_key(source_path, destination_path)
+        key = self._get_state_key(source_path, destination_path, storage_id)
         return self.state_dir / f"{key}.json"
 
     def _get_legacy_state_file(self, source_path: Path, destination_path: str) -> Path:
@@ -428,7 +436,10 @@ class SyncStateManager:
         return self._legacy_dir / f"{key}.json"
 
     def load_state(
-        self, source_path: Path, destination_path: str
+        self,
+        source_path: Path,
+        destination_path: str,
+        storage_id: Optional[int] = None,
     ) -> Optional[SyncState]:
         """Load sync state for a sync pair.
 
@@ -437,11 +448,12 @@ class SyncStateManager:
         Args:
             source_path: Source directory path
             destination_path: Destination path
+            storage_id: Optional storage ID to differentiate between storages
 
         Returns:
             SyncState if found, None otherwise
         """
-        state_file = self._get_state_file(source_path, destination_path)
+        state_file = self._get_state_file(source_path, destination_path, storage_id)
         legacy_file = self._get_legacy_state_file(source_path, destination_path)
 
         # Try current version first
@@ -486,6 +498,7 @@ class SyncStateManager:
         source_tree: Optional[SourceTree] = None,
         destination_tree: Optional[DestinationTree] = None,
         source_file_hashes: Optional[dict[str, str]] = None,
+        storage_id: Optional[int] = None,
     ) -> None:
         """Save sync state for a sync pair.
 
@@ -496,6 +509,7 @@ class SyncStateManager:
             source_tree: Full source tree state
             destination_tree: Full destination tree state
             source_file_hashes: MD5 hashes of source files
+            storage_id: Optional storage ID to differentiate between storages
         """
         state = SyncState(
             source_path=str(source_path.resolve()),
@@ -512,7 +526,7 @@ class SyncStateManager:
         if synced_files and not source_tree and not destination_tree:
             state.synced_files = synced_files
 
-        state_file = self._get_state_file(source_path, destination_path)
+        state_file = self._get_state_file(source_path, destination_path, storage_id)
 
         try:
             # Write atomically using temp file
@@ -541,6 +555,7 @@ class SyncStateManager:
         source_tree: SourceTree,
         destination_tree: DestinationTree,
         source_file_hashes: Optional[dict[str, str]] = None,
+        storage_id: Optional[int] = None,
     ) -> None:
         """Save sync state with full tree information.
 
@@ -552,6 +567,7 @@ class SyncStateManager:
             source_tree: Full source tree state
             destination_tree: Full destination tree state
             source_file_hashes: MD5 hashes of source files
+            storage_id: Optional storage ID to differentiate between storages
         """
         # Also compute synced_files for backward compatibility
         source_paths = set(source_tree.tree.keys())
@@ -565,19 +581,23 @@ class SyncStateManager:
             source_tree=source_tree,
             destination_tree=destination_tree,
             source_file_hashes=source_file_hashes,
+            storage_id=storage_id,
         )
 
-    def clear_state(self, source_path: Path, destination_path: str) -> bool:
+    def clear_state(
+        self, source_path: Path, destination_path: str, storage_id: Optional[int] = None
+    ) -> bool:
         """Clear sync state for a sync pair.
 
         Args:
             source_path: Source directory path
             destination_path: Destination path
+            storage_id: Optional storage ID to differentiate between storages
 
         Returns:
             True if state was cleared, False if no state existed
         """
-        state_file = self._get_state_file(source_path, destination_path)
+        state_file = self._get_state_file(source_path, destination_path, storage_id)
         legacy_file = self._get_legacy_state_file(source_path, destination_path)
         cleared = False
 
@@ -650,3 +670,95 @@ def build_destination_tree_from_files(destination_files: list) -> DestinationTre
         tree.add_item(item)
 
     return tree
+
+
+def validate_state_against_current_files(
+    state: SyncState,
+    current_source_files: dict[str, Any],
+    current_dest_files: dict[str, Any],
+) -> set[str]:
+    """Validate cached state against current file system state.
+
+    This function checks if files that were marked as synced in the cached
+    state still exist and have the same metadata. This is critical for
+    detecting:
+    - File deletions (file in state but not in current scan)
+    - File modifications (file exists but size/mtime changed)
+
+    A file is considered "still validly synced" only if:
+    1. It exists in current source scan with same size and mtime
+    2. It exists in current destination scan with same size
+    3. Both conditions are met
+
+    Args:
+        state: Previously saved sync state
+        current_source_files: Dict mapping relative_path -> SourceFile
+        current_dest_files: Dict mapping relative_path -> DestinationFile
+
+    Returns:
+        Set of relative paths that are still validly synced (no changes detected)
+    """
+    validated_paths = set()
+
+    # Get all paths that were synced in previous state
+    synced_paths = state.get_synced_paths()
+
+    for path in synced_paths:
+        # Check source file
+        source_valid = False
+        if path in current_source_files:
+            current_source = current_source_files[path]
+            state_source = state.source_tree.get_by_path(path)
+
+            if state_source:
+                # File exists - check if metadata matches
+                size_matches = current_source.size == state_source.size
+                mtime_matches = abs(current_source.mtime - state_source.mtime) < 1.0
+                source_valid = size_matches and mtime_matches
+
+                if not source_valid:
+                    logger.debug(
+                        f"Source file changed: {path} "
+                        f"(size: {state_source.size} -> {current_source.size}, "
+                        f"mtime: {state_source.mtime} -> {current_source.mtime})"
+                    )
+            else:
+                # State has v1 format without tree data - assume valid if file exists
+                source_valid = True
+        else:
+            logger.debug(f"Source file deleted: {path}")
+
+        # Check destination file
+        dest_valid = False
+        if path in current_dest_files:
+            current_dest = current_dest_files[path]
+            state_dest = state.destination_tree.get_by_path(path)
+
+            if state_dest:
+                # File exists - check if metadata matches
+                size_matches = current_dest.size == state_dest.size
+                dest_valid = size_matches
+
+                if not dest_valid:
+                    logger.debug(
+                        f"Destination file changed: {path} "
+                        f"(size: {state_dest.size} -> {current_dest.size})"
+                    )
+            else:
+                # State has v1 format without tree data - assume valid if file exists
+                dest_valid = True
+        else:
+            logger.debug(f"Destination file deleted: {path}")
+
+        # Only consider file as still synced if both source and dest are valid
+        if source_valid and dest_valid:
+            validated_paths.add(path)
+
+    invalidated_count = len(synced_paths) - len(validated_paths)
+    if invalidated_count > 0:
+        logger.info(
+            f"State validation: {len(validated_paths)} files still synced, "
+            f"{invalidated_count} files invalidated (deleted or modified)"
+        )
+
+    return validated_paths

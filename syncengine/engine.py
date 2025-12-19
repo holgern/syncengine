@@ -41,6 +41,7 @@ from .state import (
     SyncStateManager,
     build_destination_tree_from_files,
     build_source_tree_from_files,
+    validate_state_against_current_files,
 )
 
 logger = logging.getLogger(__name__)
@@ -318,8 +319,11 @@ class SyncEngine:
         previous_synced_files: set[str] = set()
         previous_local_tree = None
         previous_remote_tree = None
+        state = None
         if pair.sync_mode == SyncMode.TWO_WAY:
-            state = self.state_manager.load_state(pair.source, pair.destination)
+            state = self.state_manager.load_state(
+                pair.source, pair.destination, pair.storage_id
+            )
             if state:
                 previous_synced_files = state.synced_files
                 previous_local_tree = state.source_tree
@@ -379,6 +383,14 @@ class SyncEngine:
         # Build dictionaries for comparison
         local_file_map = {f.relative_path: f for f in local_files}
         remote_file_map = {f.relative_path: f for f in remote_files}
+
+        # Validate state against current files (if state was loaded)
+        if pair.sync_mode == SyncMode.TWO_WAY and state:
+            validated_synced_files = validate_state_against_current_files(
+                state, local_file_map, remote_file_map
+            )
+            # Replace previous_synced_files with validated set
+            previous_synced_files = validated_synced_files
 
         # Step 2: Compare files and determine actions (with rename detection)
         comparator = FileComparator(
@@ -450,6 +462,7 @@ class SyncEngine:
                     synced_files=current_synced_files,
                     source_tree=local_tree,
                     destination_tree=remote_tree,
+                    storage_id=pair.storage_id,
                 )
                 logger.debug(
                     f"Saved sync state with {len(current_synced_files)} files "
@@ -500,13 +513,18 @@ class SyncEngine:
         logger.debug(f"Starting streaming sync at {start_time:.2f}")
 
         # Load previous sync state for TWO_WAY mode (for deletion detection)
-        # NOTE: Rename detection using previous trees is not yet implemented
-        # for streaming mode - only traditional mode supports it
         previous_synced_files: set[str] = set()
+        previous_local_tree = None
+        previous_remote_tree = None
+        state = None
         if pair.sync_mode == SyncMode.TWO_WAY:
-            state = self.state_manager.load_state(pair.source, pair.destination)
+            state = self.state_manager.load_state(
+                pair.source, pair.destination, pair.storage_id
+            )
             if state:
                 previous_synced_files = state.synced_files
+                previous_local_tree = state.source_tree
+                previous_remote_tree = state.destination_tree
                 logger.debug(
                     f"Loaded previous sync state with "
                     f"{len(previous_synced_files)} files, "
@@ -521,6 +539,55 @@ class SyncEngine:
 
         # Build dictionary for comparison
         local_file_map = {f.relative_path: f for f in local_files}
+
+        # Validate local files against state if we have state
+        # For streaming mode, we can only validate local files now.
+        # Remote validation happens incrementally as batches are processed.
+        if state and pair.sync_mode == SyncMode.TWO_WAY:
+            # For streaming, we validate only local side now
+            # Create a temporary empty remote map for local-side validation
+            validated_local_paths: set[str] = set()
+            for path in previous_synced_files:
+                # Check if local file still exists and matches state
+                if path in local_file_map:
+                    current_local = local_file_map[path]
+                    state_local = state.source_tree.get_by_path(path)
+
+                    if state_local:
+                        # Validate size and mtime
+                        size_matches = current_local.size == state_local.size
+                        mtime_matches = (
+                            abs(current_local.mtime - state_local.mtime) < 1.0
+                        )
+
+                        if size_matches and mtime_matches:
+                            # Local file still valid, keep in synced set for now
+                            # Final validation happens when we see the remote file
+                            validated_local_paths.add(path)
+                        else:
+                            logger.debug(
+                                f"Local file changed: {path} "
+                                f"(size: {state_local.size} -> {current_local.size}, "
+                                f"mtime: {state_local.mtime} -> {current_local.mtime})"
+                            )
+                    else:
+                        # State has v1 format, assume valid if exists
+                        validated_local_paths.add(path)
+                else:
+                    logger.debug(f"Local file deleted: {path}")
+
+            # Don't update previous_synced_files here - keep original set
+            # Comparator needs deleted files to trigger deletions
+            # It checks previous_synced_files against current files
+            original_synced_count = len(previous_synced_files)
+
+            if len(validated_local_paths) < original_synced_count:
+                invalidated = original_synced_count - len(validated_local_paths)
+                logger.info(
+                    f"Streaming mode local validation: "
+                    f"{len(validated_local_paths)} files still valid, "
+                    f"{invalidated} invalidated"
+                )
 
         # Track statistics
         stats = self._create_empty_stats()
@@ -549,6 +616,8 @@ class SyncEngine:
                 max_workers=max_workers,
                 start_delay=start_delay,
                 previous_synced_files=previous_synced_files,
+                previous_local_tree=previous_local_tree,
+                previous_remote_tree=previous_remote_tree,
                 synced_files=synced_files,
                 synced_local_file_map=synced_local_file_map,
                 synced_remote_file_map=synced_remote_file_map,
@@ -591,6 +660,7 @@ class SyncEngine:
                 synced_files=synced_files,
                 source_tree=local_tree,
                 destination_tree=remote_tree,
+                storage_id=pair.storage_id,
             )
             logger.debug(
                 f"Saved sync state with {len(synced_files)} files "
@@ -1676,6 +1746,8 @@ class SyncEngine:
         max_workers: int,
         start_delay: float = 0.0,
         previous_synced_files: Optional[set[str]] = None,
+        previous_local_tree=None,
+        previous_remote_tree=None,
         synced_files: Optional[set[str]] = None,
         synced_local_file_map: Optional[dict[str, SourceFile]] = None,
         synced_remote_file_map: Optional[dict[str, DestinationFile]] = None,
@@ -1751,6 +1823,8 @@ class SyncEngine:
                     max_workers=max_workers,
                     start_delay=start_delay,
                     previous_synced_files=previous_synced_files,
+                    previous_local_tree=previous_local_tree,
+                    previous_remote_tree=previous_remote_tree,
                     force_upload=force_upload,
                     force_download=force_download,
                 )
@@ -1798,6 +1872,8 @@ class SyncEngine:
         max_workers: int,
         start_delay: float = 0.0,
         previous_synced_files: Optional[set[str]] = None,
+        previous_local_tree=None,
+        previous_remote_tree=None,
         force_upload: bool = False,
         force_download: bool = False,
     ) -> tuple[dict, set[str], dict[str, SourceFile], dict[str, DestinationFile]]:
@@ -1839,8 +1915,8 @@ class SyncEngine:
         comparator = FileComparator(
             pair.sync_mode,
             previous_synced_files,
-            None,
-            None,
+            previous_local_tree,
+            previous_remote_tree,
             force_upload,
             force_download,
         )
