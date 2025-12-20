@@ -36,7 +36,7 @@ from .constants import (
 from .engine import SyncEngine
 from .ignore import IgnoreFileManager, IgnoreRule, load_ignore_file
 from .models import FileEntry, SyncConfig
-from .modes import SyncMode
+from .modes import SyncMode, InitialSyncPreference
 from .operations import SyncOperations
 from .pair import SyncPair
 from .progress import (
@@ -81,6 +81,7 @@ __all__ = [
     "SyncEngine",
     # Modes
     "SyncMode",
+    "InitialSyncPreference",
     # Pair
     "SyncPair",
     # Scanner

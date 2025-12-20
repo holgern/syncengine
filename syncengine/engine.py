@@ -9,7 +9,7 @@ import logging
 import time
 from concurrent.futures import Future, ThreadPoolExecutor
 from pathlib import Path
-from typing import Callable, Optional
+from typing import TYPE_CHECKING, Callable, Optional
 
 from .comparator import FileComparator, SyncAction, SyncDecision
 from .concurrency import ConcurrencyLimits, SyncPauseController
@@ -43,6 +43,9 @@ from .state import (
     build_source_tree_from_files,
     validate_state_against_current_files,
 )
+
+if TYPE_CHECKING:
+    from .modes import InitialSyncPreference
 
 logger = logging.getLogger(__name__)
 
@@ -178,6 +181,7 @@ class SyncEngine:
         file_renames: Optional[dict[str, str]] = None,
         force_upload: bool = False,
         force_download: bool = False,
+        initial_sync_preference: Optional["InitialSyncPreference"] = None,
     ) -> dict:
         """Sync a single sync pair.
 
@@ -206,6 +210,17 @@ class SyncEngine:
                            match local files (bypasses hash/size comparison). Works
                            with DESTINATION_TO_SOURCE, DESTINATION_BACKUP, and
                            TWO_WAY modes.
+            initial_sync_preference: How to handle files that exist on only one side
+                                    during the first TWO_WAY sync (no previous state).
+                                    Only applies to TWO_WAY mode. Options:
+                                    - MERGE: Download destination files, upload source
+                                      files (no deletions)
+                                    - SOURCE_WINS: Upload source, delete
+                                      destination-only files
+                                    - DESTINATION_WINS: Download destination, delete
+                                      source-only files
+                                    If None, defaults to MERGE (safer behavior).
+                                    After first sync, normal TWO_WAY behavior applies.
 
         Returns:
             Dictionary with sync statistics
@@ -219,7 +234,20 @@ class SyncEngine:
             >>> # Force upload all files (replace existing)
             >>> stats = engine.sync_pair(pair, force_upload=True)
             >>> print(f"Uploaded {stats['uploads']} files")
+
+            >>> # Safe vault restoration (destination is authoritative)
+            >>> from syncengine import InitialSyncPreference
+            >>> stats = engine.sync_pair(
+            ...     pair,
+            ...     initial_sync_preference=InitialSyncPreference.DESTINATION_WINS
+            ... )
         """
+        # Default to MERGE for safer initial sync behavior
+        if initial_sync_preference is None and pair.sync_mode == SyncMode.TWO_WAY:
+            from .modes import InitialSyncPreference
+
+            initial_sync_preference = InitialSyncPreference.MERGE
+
         # Validate local directory exists
         if not pair.source.exists():
             raise ValueError(f"Local directory does not exist: {pair.source}")
@@ -283,6 +311,7 @@ class SyncEngine:
                 sync_progress_tracker,
                 force_upload,
                 force_download,
+                initial_sync_preference,
             )
 
     def _sync_pair_traditional(
@@ -297,6 +326,7 @@ class SyncEngine:
         sync_progress_tracker: Optional[SyncProgressTracker] = None,
         force_upload: bool = False,
         force_download: bool = False,
+        initial_sync_preference: Optional["InitialSyncPreference"] = None,
     ) -> dict:
         """Traditional sync: scan all files upfront, then process.
 
@@ -311,6 +341,7 @@ class SyncEngine:
             sync_progress_tracker: Optional progress tracker (disables spinners)
             force_upload: If True, bypass hash/size comparison and upload all files
             force_download: If True, bypass hash/size comparison and download all files
+            initial_sync_preference: How to handle initial TWO_WAY sync
 
         Returns:
             Dictionary with sync statistics
@@ -320,6 +351,8 @@ class SyncEngine:
         previous_local_tree = None
         previous_remote_tree = None
         state = None
+        is_initial_sync = False
+
         if pair.sync_mode == SyncMode.TWO_WAY:
             state = self.state_manager.load_state(
                 pair.source, pair.destination, pair.storage_id
@@ -334,6 +367,9 @@ class SyncEngine:
                     f"local_tree: {state.source_tree.size}, "
                     f"remote_tree: {state.destination_tree.size}"
                 )
+            else:
+                is_initial_sync = True
+                logger.debug("No previous state found - this is an initial sync")
 
         # Step 1: Scan files
         # Skip internal Progress spinner if external tracker is managing display
@@ -400,6 +436,8 @@ class SyncEngine:
             previous_remote_tree,
             force_upload,
             force_download,
+            is_initial_sync,
+            initial_sync_preference,
         )
         decisions = comparator.compare_files(local_file_map, remote_file_map)
 
@@ -487,6 +525,7 @@ class SyncEngine:
         sync_progress_tracker: Optional[SyncProgressTracker] = None,
         force_upload: bool = False,
         force_download: bool = False,
+        initial_sync_preference: Optional["InitialSyncPreference"] = None,
     ) -> dict:
         """Streaming sync: process files in batches as they're discovered.
 
@@ -517,6 +556,7 @@ class SyncEngine:
         previous_local_tree = None
         previous_remote_tree = None
         state = None
+
         if pair.sync_mode == SyncMode.TWO_WAY:
             state = self.state_manager.load_state(
                 pair.source, pair.destination, pair.storage_id
@@ -687,6 +727,7 @@ class SyncEngine:
         files_to_skip: Optional[set[str]] = None,
         file_renames: Optional[dict[str, str]] = None,
         force_upload: bool = False,
+        initial_sync_preference: Optional["InitialSyncPreference"] = None,
     ) -> dict:
         """Incremental sync: process directories level by level.
 
@@ -1919,6 +1960,8 @@ class SyncEngine:
             previous_remote_tree,
             force_upload,
             force_download,
+            False,  # is_initial_sync - not fully supported in streaming mode yet
+            None,  # initial_sync_preference
         )
         batch_decisions = []
 
@@ -2165,6 +2208,8 @@ class SyncEngine:
             None,
             force_upload,
             force_download,
+            False,  # is_initial_sync - not fully supported in streaming mode yet
+            None,  # initial_sync_preference
         )
         local_decisions = []
 

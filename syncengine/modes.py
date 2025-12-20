@@ -68,6 +68,11 @@ class SyncMode(str, Enum):
             "cloudtolocal": "destinationToSource",
             "localbackup": "sourceBackup",
             "cloudbackup": "destinationBackup",
+            # Legacy Short abbreviations
+            "ltc": "sourceToDestination",
+            "lb": "sourceBackup",
+            "ctl": "destinationToSource",
+            "cb": "destinationBackup",
         }
 
         # Normalize input
@@ -139,6 +144,85 @@ class SyncMode(str, Enum):
         """
         return (
             self.allows_download or self.allows_destination_delete or self.allows_upload
+        )
+
+    def __str__(self) -> str:
+        """Return string representation."""
+        return self.value
+
+
+class InitialSyncPreference(str, Enum):
+    """Preference for handling initial sync when no previous state exists.
+
+    When performing a TWO_WAY sync with no previous state, the engine cannot
+    distinguish between "file deleted locally" vs "file added remotely". This
+    enum controls how to handle files that exist on only one side during the
+    first sync.
+
+    After the first sync establishes state, normal TWO_WAY behavior applies
+    regardless of this preference.
+    """
+
+    MERGE = "merge"
+    """Merge both sides without deletions.
+
+    Download files from destination that don't exist locally.
+    Upload files from source that don't exist on destination.
+    No deletions occur on first sync.
+
+    Best for: Merging two existing directories, cloud backup restoration.
+    """
+
+    SOURCE_WINS = "source_wins"
+    """Source is authoritative on first sync.
+
+    Files only on source: uploaded to destination
+    Files only on destination: deleted from destination
+
+    Best for: Making destination an exact mirror of source.
+    """
+
+    DESTINATION_WINS = "destination_wins"
+    """Destination is authoritative on first sync.
+
+    Files only on destination: downloaded to source
+    Files only on source: deleted from source
+
+    Best for: Cloud/vault restoration, treating remote as source of truth.
+    """
+
+    @classmethod
+    def from_string(cls, value: str) -> "InitialSyncPreference":
+        """Parse preference from string.
+
+        Args:
+            value: Preference string
+
+        Returns:
+            InitialSyncPreference enum value
+
+        Raises:
+            ValueError: If preference string is not recognized
+
+        Examples:
+            >>> InitialSyncPreference.from_string("merge")
+            InitialSyncPreference.MERGE
+            >>> InitialSyncPreference.from_string("source_wins")
+            InitialSyncPreference.SOURCE_WINS
+        """
+        # Normalize input
+        normalized = value.lower().replace("-", "_")
+
+        # Try to find matching enum value
+        for pref in cls:
+            if pref.value.replace("-", "_") == normalized:
+                return pref
+
+        # If no match found, raise error with helpful message
+        valid_values = [p.value for p in cls]
+        raise ValueError(
+            f"Invalid initial sync preference: {value}. "
+            f"Valid values are: {', '.join(valid_values)}"
         )
 
     def __str__(self) -> str:

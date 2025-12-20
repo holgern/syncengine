@@ -2,11 +2,14 @@
 
 from dataclasses import dataclass
 from enum import Enum
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from .modes import SyncMode
 from .scanner import DestinationFile, SourceFile
 from .state import DestinationTree, SourceTree
+
+if TYPE_CHECKING:
+    from .modes import InitialSyncPreference
 
 
 class SyncAction(str, Enum):
@@ -83,6 +86,8 @@ class FileComparator:
         previous_destination_tree: Optional[DestinationTree] = None,
         force_upload: bool = False,
         force_download: bool = False,
+        is_initial_sync: bool = False,
+        initial_sync_preference: Optional["InitialSyncPreference"] = None,
     ):
         """Initialize file comparator.
 
@@ -99,6 +104,10 @@ class FileComparator:
                          source files (even if they match destination)
             force_download: If True, bypass hash/size comparison and always download
                            destination files (even if they match source)
+            is_initial_sync: True if this is the first sync with no prior state
+            initial_sync_preference: How to handle files on only one side during
+                                    initial sync (only applies if is_initial_sync=True
+                                    and sync_mode=TWO_WAY)
         """
         self.sync_mode = sync_mode
         self.previous_synced_files = previous_synced_files or set()
@@ -106,6 +115,8 @@ class FileComparator:
         self.previous_destination_tree = previous_destination_tree
         self.force_upload = force_upload
         self.force_download = force_download
+        self.is_initial_sync = is_initial_sync
+        self.initial_sync_preference = initial_sync_preference
 
         # Track detected renames to avoid processing them twice
         self._source_renames: dict[int, str] = {}  # file_id -> new_path
@@ -406,6 +417,9 @@ class FileComparator:
         - If file was NOT previously synced, it's a new file -> upload
         - If file_id matches a renamed file in destination, it's a rename -> rename dest
 
+        For TWO_WAY mode on initial sync (no previous state):
+        - Apply initial_sync_preference to determine action
+
         Args:
             path: Current path of the file
             source_file: Source file object
@@ -434,6 +448,42 @@ class FileComparator:
                         old_path=old_path,
                         new_path=path,
                     )
+
+        # Apply initial sync preference for TWO_WAY mode on first sync
+        if (
+            self.sync_mode == SyncMode.TWO_WAY
+            and self.is_initial_sync
+            and self.initial_sync_preference
+        ):
+            from .modes import InitialSyncPreference
+
+            if self.initial_sync_preference == InitialSyncPreference.MERGE:
+                # MERGE: Upload source files that don't exist on destination
+                return SyncDecision(
+                    action=SyncAction.UPLOAD,
+                    reason="Initial sync (MERGE): uploading source file",
+                    source_file=source_file,
+                    destination_file=None,
+                    relative_path=path,
+                )
+            elif self.initial_sync_preference == InitialSyncPreference.SOURCE_WINS:
+                # SOURCE_WINS: Upload source files
+                return SyncDecision(
+                    action=SyncAction.UPLOAD,
+                    reason="Initial sync (SOURCE_WINS): uploading source file",
+                    source_file=source_file,
+                    destination_file=None,
+                    relative_path=path,
+                )
+            elif self.initial_sync_preference == InitialSyncPreference.DESTINATION_WINS:
+                # DESTINATION_WINS: Delete source files that don't exist on destination
+                return SyncDecision(
+                    action=SyncAction.DELETE_SOURCE,
+                    reason="Initial sync (DESTINATION_WINS): deleting source-only file",
+                    source_file=source_file,
+                    destination_file=None,
+                    relative_path=path,
+                )
 
         # For TWO_WAY mode, use previous state to determine action
         if self.sync_mode == SyncMode.TWO_WAY and self.previous_synced_files:
@@ -493,6 +543,9 @@ class FileComparator:
         - If file was NOT previously synced, it's a new file -> download
         - If id matches a renamed file at source, it's a rename -> rename source
 
+        For TWO_WAY mode on initial sync (no previous state):
+        - Apply initial_sync_preference to determine action
+
         Args:
             path: Current path of the file
             destination_file: Destination file object
@@ -523,6 +576,44 @@ class FileComparator:
                         old_path=old_path,
                         new_path=path,
                     )
+
+        # Apply initial sync preference for TWO_WAY mode on first sync
+        if (
+            self.sync_mode == SyncMode.TWO_WAY
+            and self.is_initial_sync
+            and self.initial_sync_preference
+        ):
+            from .modes import InitialSyncPreference
+
+            if self.initial_sync_preference == InitialSyncPreference.MERGE:
+                # MERGE: Download destination files that don't exist at source
+                return SyncDecision(
+                    action=SyncAction.DOWNLOAD,
+                    reason="Initial sync (MERGE): downloading destination file",
+                    source_file=None,
+                    destination_file=destination_file,
+                    relative_path=path,
+                )
+            elif self.initial_sync_preference == InitialSyncPreference.SOURCE_WINS:
+                # SOURCE_WINS: Delete destination files that don't exist at source
+                return SyncDecision(
+                    action=SyncAction.DELETE_DESTINATION,
+                    reason="Initial sync (SOURCE_WINS): deleting destination-only file",
+                    source_file=None,
+                    destination_file=destination_file,
+                    relative_path=path,
+                )
+            elif self.initial_sync_preference == InitialSyncPreference.DESTINATION_WINS:
+                # DESTINATION_WINS: Download destination files
+                return SyncDecision(
+                    action=SyncAction.DOWNLOAD,
+                    reason=(
+                        "Initial sync (DESTINATION_WINS): downloading destination file"
+                    ),
+                    source_file=None,
+                    destination_file=destination_file,
+                    relative_path=path,
+                )
 
         # For TWO_WAY mode, use previous state to determine action
         if self.sync_mode == SyncMode.TWO_WAY and self.previous_synced_files:
