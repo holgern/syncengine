@@ -11,12 +11,11 @@ Bug Report: SYNCENGINE_DESTINATION_WINS_BUG.md
 
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
+from unittest.mock import patch
 
 from benchmarks.test_utils import LocalStorageClient, create_entries_manager_factory
 from syncengine import InitialSyncPreference, SyncEngine, SyncMode, SyncPair
 from syncengine.protocols import DefaultOutputHandler
-from syncengine.state import SyncStateManager
 
 
 def test_failed_download_not_marked_synced_traditional():
@@ -70,15 +69,15 @@ def test_failed_download_not_marked_synced_traditional():
         print(f"Stats: {stats}")
 
         # Verify: test1.txt and test3.txt downloaded, test2.txt failed
-        assert (source / "test1.txt").exists(), (
-            "test1.txt should exist (download succeeded)"
-        )
-        assert not (source / "test2.txt").exists(), (
-            "test2.txt should NOT exist (download failed)"
-        )
-        assert (source / "test3.txt").exists(), (
-            "test3.txt should exist (download succeeded)"
-        )
+        assert (
+            source / "test1.txt"
+        ).exists(), "test1.txt should exist (download succeeded)"
+        assert not (
+            source / "test2.txt"
+        ).exists(), "test2.txt should NOT exist (download failed)"
+        assert (
+            source / "test3.txt"
+        ).exists(), "test3.txt should exist (download succeeded)"
 
         # Check state file
         # State is saved to default location (~/.config/syncengine)
@@ -88,26 +87,26 @@ def test_failed_download_not_marked_synced_traditional():
         assert state is not None, "State file should exist"
 
         # CRITICAL: synced_files should only contain successfully downloaded files
-        assert "test1.txt" in state.synced_files, (
-            "test1.txt should be in synced_files (downloaded)"
-        )
-        assert "test2.txt" not in state.synced_files, (
-            "test2.txt should NOT be in synced_files (download failed)"
-        )
-        assert "test3.txt" in state.synced_files, (
-            "test3.txt should be in synced_files (downloaded)"
-        )
+        assert (
+            "test1.txt" in state.synced_files
+        ), "test1.txt should be in synced_files (downloaded)"
+        assert (
+            "test2.txt" not in state.synced_files
+        ), "test2.txt should NOT be in synced_files (download failed)"
+        assert (
+            "test3.txt" in state.synced_files
+        ), "test3.txt should be in synced_files (downloaded)"
 
         # CRITICAL: source_tree should only contain files that exist locally
-        assert "test1.txt" in state.source_tree.tree, (
-            "test1.txt should be in source_tree"
-        )
-        assert "test2.txt" not in state.source_tree.tree, (
-            "test2.txt should NOT be in source_tree (doesn't exist locally)"
-        )
-        assert "test3.txt" in state.source_tree.tree, (
-            "test3.txt should be in source_tree"
-        )
+        assert (
+            "test1.txt" in state.source_tree.tree
+        ), "test1.txt should be in source_tree"
+        assert (
+            "test2.txt" not in state.source_tree.tree
+        ), "test2.txt should NOT be in source_tree (doesn't exist locally)"
+        assert (
+            "test3.txt" in state.source_tree.tree
+        ), "test3.txt should be in source_tree"
 
         # CRITICAL: All files in destination_tree
         assert "test1.txt" in state.destination_tree.tree
@@ -116,12 +115,12 @@ def test_failed_download_not_marked_synced_traditional():
 
         # State consistency: synced_files ⊆ (source_tree ∩ destination_tree)
         for file_path in state.synced_files:
-            assert file_path in state.source_tree.tree, (
-                f"{file_path} in synced_files but not in source_tree - this is the bug!"
-            )
-            assert file_path in state.destination_tree.tree, (
-                f"{file_path} in synced_files but not in destination_tree"
-            )
+            assert (
+                file_path in state.source_tree.tree
+            ), f"{file_path} in synced_files but not in source_tree - this is the bug!"
+            assert (
+                file_path in state.destination_tree.tree
+            ), f"{file_path} in synced_files but not in destination_tree"
 
         print("✓ Failed download not marked as synced (traditional mode)")
 
@@ -171,15 +170,15 @@ def test_failed_download_not_marked_synced_streaming():
         print(f"Stats: {stats}")
 
         # Verify: test1.txt and test3.txt downloaded, test2.txt failed
-        assert (source / "test1.txt").exists(), (
-            "test1.txt should exist (download succeeded)"
-        )
-        assert not (source / "test2.txt").exists(), (
-            "test2.txt should NOT exist (download failed)"
-        )
-        assert (source / "test3.txt").exists(), (
-            "test3.txt should exist (download succeeded)"
-        )
+        assert (
+            source / "test1.txt"
+        ).exists(), "test1.txt should exist (download succeeded)"
+        assert not (
+            source / "test2.txt"
+        ).exists(), "test2.txt should NOT exist (download failed)"
+        assert (
+            source / "test3.txt"
+        ).exists(), "test3.txt should exist (download succeeded)"
 
         # Check state file
         # State is saved to default location (~/.config/syncengine)
@@ -189,32 +188,32 @@ def test_failed_download_not_marked_synced_streaming():
         assert state is not None, "State file should exist"
 
         # CRITICAL: synced_files should only contain successfully downloaded files
-        assert "test1.txt" in state.synced_files, (
-            "test1.txt should be in synced_files (downloaded)"
-        )
-        assert "test2.txt" not in state.synced_files, (
-            "test2.txt should NOT be in synced_files (download failed)"
-        )
-        assert "test3.txt" in state.synced_files, (
-            "test3.txt should be in synced_files (downloaded)"
-        )
+        assert (
+            "test1.txt" in state.synced_files
+        ), "test1.txt should be in synced_files (downloaded)"
+        assert (
+            "test2.txt" not in state.synced_files
+        ), "test2.txt should NOT be in synced_files (download failed)"
+        assert (
+            "test3.txt" in state.synced_files
+        ), "test3.txt should be in synced_files (downloaded)"
 
         # CRITICAL: source_tree should only contain files that exist locally
-        assert "test1.txt" in state.source_tree.tree, (
-            "test1.txt should be in source_tree"
-        )
-        assert "test2.txt" not in state.source_tree.tree, (
-            "test2.txt should NOT be in source_tree (doesn't exist locally)"
-        )
-        assert "test3.txt" in state.source_tree.tree, (
-            "test3.txt should be in source_tree"
-        )
+        assert (
+            "test1.txt" in state.source_tree.tree
+        ), "test1.txt should be in source_tree"
+        assert (
+            "test2.txt" not in state.source_tree.tree
+        ), "test2.txt should NOT be in source_tree (doesn't exist locally)"
+        assert (
+            "test3.txt" in state.source_tree.tree
+        ), "test3.txt should be in source_tree"
 
         # State consistency check
         for file_path in state.synced_files:
-            assert file_path in state.source_tree.tree, (
-                f"{file_path} in synced_files but not in source_tree - this is the bug!"
-            )
+            assert (
+                file_path in state.source_tree.tree
+            ), f"{file_path} in synced_files but not in source_tree - this is the bug!"
 
         print("✓ Failed download not marked as synced (streaming mode)")
 
@@ -269,15 +268,15 @@ def test_failed_upload_not_marked_synced_traditional():
         print(f"Stats: {stats}")
 
         # Verify: test1.txt and test3.txt uploaded, test2.txt failed
-        assert (dest_storage / "test1.txt").exists(), (
-            "test1.txt should exist on remote (upload succeeded)"
-        )
-        assert not (dest_storage / "test2.txt").exists(), (
-            "test2.txt should NOT exist on remote (upload failed)"
-        )
-        assert (dest_storage / "test3.txt").exists(), (
-            "test3.txt should exist on remote (upload succeeded)"
-        )
+        assert (
+            dest_storage / "test1.txt"
+        ).exists(), "test1.txt should exist on remote (upload succeeded)"
+        assert not (
+            dest_storage / "test2.txt"
+        ).exists(), "test2.txt should NOT exist on remote (upload failed)"
+        assert (
+            dest_storage / "test3.txt"
+        ).exists(), "test3.txt should exist on remote (upload succeeded)"
 
         # Check state file
         # State is saved to default location (~/.config/syncengine)
@@ -287,26 +286,26 @@ def test_failed_upload_not_marked_synced_traditional():
         assert state is not None, "State file should exist"
 
         # CRITICAL: synced_files should only contain successfully uploaded files
-        assert "test1.txt" in state.synced_files, (
-            "test1.txt should be in synced_files (uploaded)"
-        )
-        assert "test2.txt" not in state.synced_files, (
-            "test2.txt should NOT be in synced_files (upload failed)"
-        )
-        assert "test3.txt" in state.synced_files, (
-            "test3.txt should be in synced_files (uploaded)"
-        )
+        assert (
+            "test1.txt" in state.synced_files
+        ), "test1.txt should be in synced_files (uploaded)"
+        assert (
+            "test2.txt" not in state.synced_files
+        ), "test2.txt should NOT be in synced_files (upload failed)"
+        assert (
+            "test3.txt" in state.synced_files
+        ), "test3.txt should be in synced_files (uploaded)"
 
         # CRITICAL: destination_tree should only contain files that exist remotely
-        assert "test1.txt" in state.destination_tree.tree, (
-            "test1.txt should be in destination_tree"
-        )
-        assert "test2.txt" not in state.destination_tree.tree, (
-            "test2.txt should NOT be in destination_tree (doesn't exist remotely)"
-        )
-        assert "test3.txt" in state.destination_tree.tree, (
-            "test3.txt should be in destination_tree"
-        )
+        assert (
+            "test1.txt" in state.destination_tree.tree
+        ), "test1.txt should be in destination_tree"
+        assert (
+            "test2.txt" not in state.destination_tree.tree
+        ), "test2.txt should NOT be in destination_tree (doesn't exist remotely)"
+        assert (
+            "test3.txt" in state.destination_tree.tree
+        ), "test3.txt should be in destination_tree"
 
         # State consistency check
         for file_path in state.synced_files:
@@ -360,15 +359,15 @@ def test_failed_upload_not_marked_synced_streaming():
         print(f"Stats: {stats}")
 
         # Verify: test1.txt and test3.txt uploaded, test2.txt failed
-        assert (dest_storage / "test1.txt").exists(), (
-            "test1.txt should exist on remote (upload succeeded)"
-        )
-        assert not (dest_storage / "test2.txt").exists(), (
-            "test2.txt should NOT exist on remote (upload failed)"
-        )
-        assert (dest_storage / "test3.txt").exists(), (
-            "test3.txt should exist on remote (upload succeeded)"
-        )
+        assert (
+            dest_storage / "test1.txt"
+        ).exists(), "test1.txt should exist on remote (upload succeeded)"
+        assert not (
+            dest_storage / "test2.txt"
+        ).exists(), "test2.txt should NOT exist on remote (upload failed)"
+        assert (
+            dest_storage / "test3.txt"
+        ).exists(), "test3.txt should exist on remote (upload succeeded)"
 
         # Check state file
         # State is saved to default location (~/.config/syncengine)
@@ -378,21 +377,21 @@ def test_failed_upload_not_marked_synced_streaming():
         assert state is not None, "State file should exist"
 
         # CRITICAL: synced_files should only contain successfully uploaded files
-        assert "test1.txt" in state.synced_files, (
-            "test1.txt should be in synced_files (uploaded)"
-        )
-        assert "test2.txt" not in state.synced_files, (
-            "test2.txt should NOT be in synced_files (upload failed)"
-        )
-        assert "test3.txt" in state.synced_files, (
-            "test3.txt should be in synced_files (uploaded)"
-        )
+        assert (
+            "test1.txt" in state.synced_files
+        ), "test1.txt should be in synced_files (uploaded)"
+        assert (
+            "test2.txt" not in state.synced_files
+        ), "test2.txt should NOT be in synced_files (upload failed)"
+        assert (
+            "test3.txt" in state.synced_files
+        ), "test3.txt should be in synced_files (uploaded)"
 
         # State consistency check
         for file_path in state.synced_files:
-            assert file_path in state.destination_tree.tree, (
-                f"{file_path} in synced_files but not in destination_tree"
-            )
+            assert (
+                file_path in state.destination_tree.tree
+            ), f"{file_path} in synced_files but not in destination_tree"
 
         print("✓ Failed upload not marked as synced (streaming mode)")
 
@@ -425,8 +424,6 @@ def test_download_size_verification():
         pair = SyncPair(source=source, destination="", sync_mode=SyncMode.TWO_WAY)
 
         # Mock download to write corrupted/incomplete file
-        original_download = client.download_file
-
         def mock_download_corrupted(hash_value, output_path, **kwargs):
             # Write corrupted file with wrong size
             output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -435,7 +432,7 @@ def test_download_size_verification():
             # Don't call original - simulate partial download
 
         with patch.object(client, "download_file", side_effect=mock_download_corrupted):
-            stats = engine.sync_pair(
+            engine.sync_pair(
                 pair,
                 use_streaming=False,
                 initial_sync_preference=InitialSyncPreference.DESTINATION_WINS,
@@ -447,12 +444,13 @@ def test_download_size_verification():
         expected_size = 100
 
         # This test documents the expected behavior:
-        # If file size doesn't match after download, it should not be marked as synced
-        # However, current implementation might not verify this
+        # If file size doesn't match after download, it should not be marked
+        # as synced. However, current implementation might not verify this.
         # This is an ENHANCEMENT, not part of the critical bug fix
 
         print(
-            f"Downloaded file size: {actual_size} bytes (expected {expected_size} bytes)"
+            f"Downloaded file size: {actual_size} bytes "
+            f"(expected {expected_size} bytes)"
         )
         print("✓ Download size verification test complete")
 
