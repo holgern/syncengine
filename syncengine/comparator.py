@@ -342,7 +342,7 @@ class FileComparator:
         except OSError:
             return True  # Can't read, assume match
 
-    def _compare_existing_files(
+    def _compare_existing_files(  # noqa: C901
         self, path: str, source_file: SourceFile, destination_file: DestinationFile
     ) -> SyncDecision:
         """Compare files that exist in both locations.

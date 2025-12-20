@@ -85,9 +85,9 @@ def test_initial_sync_source_wins():
 
         # Expected: file1 uploaded, file2 deleted from dest
         assert stats["uploads"] == 1, f"Expected 1 upload, got {stats['uploads']}"
-        assert stats["deletes_remote"] == 1, (
-            f"Expected 1 remote delete, got {stats['deletes_remote']}"
-        )
+        assert (
+            stats["deletes_remote"] == 1
+        ), f"Expected 1 remote delete, got {stats['deletes_remote']}"
 
         # Verify: source has file1, dest has file1 (file2 deleted)
         assert (source / "file1.txt").exists()
@@ -130,9 +130,9 @@ def test_initial_sync_destination_wins():
 
         # Expected: file2 downloaded, file1 deleted from source
         assert stats["downloads"] == 1, f"Expected 1 download, got {stats['downloads']}"
-        assert stats["deletes_local"] == 1, (
-            f"Expected 1 local delete, got {stats['deletes_local']}"
-        )
+        assert (
+            stats["deletes_local"] == 1
+        ), f"Expected 1 local delete, got {stats['deletes_local']}"
 
         # Verify: both locations have only file2
         assert not (source / "file1.txt").exists()
@@ -296,9 +296,9 @@ def test_no_warning_when_preference_set():
             for msg in warning_messages
             if "WARNING" in msg and ("Destination has" in msg or "Source has" in msg)
         ]
-        assert len(risky_warnings) == 0, (
-            f"Expected NO warning when preference is explicit. Got: {risky_warnings}"
-        )
+        assert (
+            len(risky_warnings) == 0
+        ), f"Expected NO warning when preference is explicit. Got: {risky_warnings}"
 
         print("✓ No warning test (explicit preference) passed")
 
@@ -348,32 +348,28 @@ def test_destination_wins_downloads_remote_only_files_traditional():
 
         # Expected: Download 2 files (test1.txt, test2.txt)
         # Note: test3.txt exists on both but we'll check it separately
-        assert stats["downloads"] >= 2, (
-            f"Expected at least 2 downloads, got {stats['downloads']}"
-        )
+        assert (
+            stats["downloads"] >= 2
+        ), f"Expected at least 2 downloads, got {stats['downloads']}"
 
         # Verify files were actually downloaded to source
-        assert (source / "test1.txt").exists(), (
-            "test1.txt should be downloaded to source"
-        )
-        assert (source / "test2.txt").exists(), (
-            "test2.txt should be downloaded to source"
-        )
+        assert (
+            source / "test1.txt"
+        ).exists(), "test1.txt should be downloaded to source"
+        assert (
+            source / "test2.txt"
+        ).exists(), "test2.txt should be downloaded to source"
         assert (source / "test3.txt").exists(), "test3.txt should exist on source"
 
         # Verify no deletions occurred
         # (DESTINATION_WINS keeps dest files, downloads them)
-        assert stats["deletes_remote"] == 0, (
-            "DESTINATION_WINS should not delete remote files"
-        )
+        assert (
+            stats["deletes_remote"] == 0
+        ), "DESTINATION_WINS should not delete remote files"
 
         print(
             "✓ DESTINATION_WINS downloads remote-only files "
             "(traditional mode) test passed"
-        )
-
-        print(
-            "✓ DESTINATION_WINS downloads remote-only files (traditional mode) test passed"
         )
 
 
@@ -418,23 +414,23 @@ def test_destination_wins_downloads_remote_only_files_streaming():
         print(f"Stats (streaming): {stats}")
 
         # Expected: Download 2 files (test1.txt, test2.txt)
-        assert stats["downloads"] >= 2, (
-            f"Expected at least 2 downloads, got {stats['downloads']}"
-        )
+        assert (
+            stats["downloads"] >= 2
+        ), f"Expected at least 2 downloads, got {stats['downloads']}"
 
         # Verify files were actually downloaded to source
-        assert (source / "test1.txt").exists(), (
-            "test1.txt should be downloaded to source"
-        )
-        assert (source / "test2.txt").exists(), (
-            "test2.txt should be downloaded to source"
-        )
+        assert (
+            source / "test1.txt"
+        ).exists(), "test1.txt should be downloaded to source"
+        assert (
+            source / "test2.txt"
+        ).exists(), "test2.txt should be downloaded to source"
         assert (source / "test3.txt").exists(), "test3.txt should exist on source"
 
         # Verify no deletions occurred
-        assert stats["deletes_remote"] == 0, (
-            "DESTINATION_WINS should not delete remote files"
-        )
+        assert (
+            stats["deletes_remote"] == 0
+        ), "DESTINATION_WINS should not delete remote files"
 
         print(
             "✓ DESTINATION_WINS downloads remote-only files "
@@ -492,20 +488,20 @@ def test_destination_wins_overwrites_with_remote_version():
         print(f"Stats: {stats}")
 
         # Expected: Download remote version (destination wins on conflicts)
-        assert stats["downloads"] >= 1, (
-            f"Expected at least 1 download, got {stats['downloads']}"
-        )
+        assert (
+            stats["downloads"] >= 1
+        ), f"Expected at least 1 download, got {stats['downloads']}"
 
         # Verify local file was overwritten with remote version
         local_content_after = (source / "test3.txt").read_text()
         local_size_after = (source / "test3.txt").stat().st_size
 
-        assert local_content_after == remote_content, (
-            f"Local file should have remote content. Got: {local_content_after}"
-        )
-        assert local_size_after == remote_size, (
-            f"Local file should have remote size {remote_size}, got {local_size_after}"
-        )
+        assert (
+            local_content_after == remote_content
+        ), f"Local file should have remote content. Got: {local_content_after}"
+        assert (
+            local_size_after == remote_size
+        ), f"Local file should have remote size {remote_size}, got {local_size_after}"
 
         print("✓ DESTINATION_WINS overwrites with remote version test passed")
 
@@ -547,20 +543,20 @@ def test_destination_wins_deletes_source_only_files():
         print(f"Stats: {stats}")
 
         # Expected: Delete file1.txt from source (only on source, not on dest)
-        assert stats["deletes_local"] == 1, (
-            f"Expected 1 local deletion, got {stats['deletes_local']}"
-        )
+        assert (
+            stats["deletes_local"] == 1
+        ), f"Expected 1 local deletion, got {stats['deletes_local']}"
 
         # Verify file1.txt was deleted from source
-        assert not (source / "file1.txt").exists(), (
-            "file1.txt should be deleted from source (not on destination)"
-        )
+        assert not (
+            source / "file1.txt"
+        ).exists(), "file1.txt should be deleted from source (not on destination)"
 
         # Verify file2.txt still exists (it's on both sides)
         assert (source / "file2.txt").exists(), "file2.txt should exist on source"
-        assert (dest_storage / "file2.txt").exists(), (
-            "file2.txt should exist on destination"
-        )
+        assert (
+            dest_storage / "file2.txt"
+        ).exists(), "file2.txt should exist on destination"
 
         print("✓ DESTINATION_WINS deletes source-only files test passed")
 
@@ -602,30 +598,30 @@ def test_destination_wins_state_file_correctness():
         )
 
         # After sync, all 3 files should exist on source (downloaded)
-        assert (source / "test1.txt").exists(), (
-            "test1.txt should exist on source after sync"
-        )
-        assert (source / "test2.txt").exists(), (
-            "test2.txt should exist on source after sync"
-        )
-        assert (source / "test3.txt").exists(), (
-            "test3.txt should exist on source after sync"
-        )
+        assert (
+            source / "test1.txt"
+        ).exists(), "test1.txt should exist on source after sync"
+        assert (
+            source / "test2.txt"
+        ).exists(), "test2.txt should exist on source after sync"
+        assert (
+            source / "test3.txt"
+        ).exists(), "test3.txt should exist on source after sync"
 
         # Load state file and verify
         state = engine.state_manager.load_state(source, "", pair.storage_id)
         assert state is not None, "State file should exist after sync"
 
         # Verify synced_files includes all 3 files
-        assert "test1.txt" in state.synced_files, (
-            "test1.txt should be in synced_files (was downloaded)"
-        )
-        assert "test2.txt" in state.synced_files, (
-            "test2.txt should be in synced_files (was downloaded)"
-        )
-        assert "test3.txt" in state.synced_files, (
-            "test3.txt should be in synced_files (exists on both)"
-        )
+        assert (
+            "test1.txt" in state.synced_files
+        ), "test1.txt should be in synced_files (was downloaded)"
+        assert (
+            "test2.txt" in state.synced_files
+        ), "test2.txt should be in synced_files (was downloaded)"
+        assert (
+            "test3.txt" in state.synced_files
+        ), "test3.txt should be in synced_files (exists on both)"
 
         # Verify source_tree has all 3 files
         source_tree_paths = set(state.source_tree.tree.keys())
@@ -676,33 +672,33 @@ def test_destination_wins_state_file_correctness_streaming():
         )
 
         # After sync, all 3 files should exist on source
-        assert (source / "test1.txt").exists(), (
-            "test1.txt should exist on source after sync"
-        )
-        assert (source / "test2.txt").exists(), (
-            "test2.txt should exist on source after sync"
-        )
-        assert (source / "test3.txt").exists(), (
-            "test3.txt should exist on source after sync"
-        )
+        assert (
+            source / "test1.txt"
+        ).exists(), "test1.txt should exist on source after sync"
+        assert (
+            source / "test2.txt"
+        ).exists(), "test2.txt should exist on source after sync"
+        assert (
+            source / "test3.txt"
+        ).exists(), "test3.txt should exist on source after sync"
 
         # Load state file and verify
         state = engine.state_manager.load_state(source, "", pair.storage_id)
         assert state is not None, "State file should exist after sync"
 
         # Verify synced_files includes all 3 files
-        assert len(state.synced_files) == 3, (
-            f"Expected 3 synced files, got {len(state.synced_files)}"
-        )
+        assert (
+            len(state.synced_files) == 3
+        ), f"Expected 3 synced files, got {len(state.synced_files)}"
         assert "test1.txt" in state.synced_files
         assert "test2.txt" in state.synced_files
         assert "test3.txt" in state.synced_files
 
         # Verify both trees have all 3 files
         assert len(state.source_tree.tree) == 3, "source_tree should have 3 files"
-        assert len(state.destination_tree.tree) == 3, (
-            "destination_tree should have 3 files"
-        )
+        assert (
+            len(state.destination_tree.tree) == 3
+        ), "destination_tree should have 3 files"
 
         print("✓ DESTINATION_WINS state file correctness (streaming) test passed")
 
