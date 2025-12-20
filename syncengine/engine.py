@@ -494,9 +494,20 @@ class SyncEngine:
                     # DELETE_SOURCE/DELETE_DESTINATION are NOT added (no longer exist)
 
                 # Build full tree state for v2 format
+                # IMPORTANT: We need to rescan local files AFTER downloads to capture
+                # newly downloaded files in the source_tree. The original local_files
+                # was scanned before downloads, so it won't include downloaded files.
+                scanner = DirectoryScanner(
+                    ignore_patterns=pair.ignore,
+                    exclude_dot_files=pair.exclude_dot_files,
+                )
+                local_files_after_sync = scanner.scan_source(pair.source)
+
                 # Filter to only include files that are now synced
                 synced_local_files = [
-                    f for f in local_files if f.relative_path in current_synced_files
+                    f
+                    for f in local_files_after_sync
+                    if f.relative_path in current_synced_files
                 ]
                 synced_remote_files = [
                     f for f in remote_files if f.relative_path in current_synced_files
@@ -2045,11 +2056,19 @@ class SyncEngine:
                     synced_remote_in_batch[decision.relative_path] = remote_file_map[
                         decision.relative_path
                     ]
-                # Note: local file exists in local_file_map if it's an update
-                if decision.relative_path in local_file_map:
-                    synced_local_in_batch[decision.relative_path] = local_file_map[
-                        decision.relative_path
-                    ]
+                # For downloaded files, we need to create/update SourceFile object
+                # to reflect the actual downloaded file state
+                local_path = pair.source / decision.relative_path
+                if local_path.exists():
+                    # Create SourceFile object for downloaded file (new or updated)
+                    downloaded_file = SourceFile(
+                        path=local_path,
+                        relative_path=decision.relative_path,
+                        size=local_path.stat().st_size,
+                        mtime=local_path.stat().st_mtime,
+                        file_id=local_path.stat().st_ino,
+                    )
+                    synced_local_in_batch[decision.relative_path] = downloaded_file
             # DELETE_SOURCE and DELETE_DESTINATION are NOT added (they no longer exist)
 
         # Debug: print when batch is complete

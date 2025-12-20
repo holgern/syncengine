@@ -256,6 +256,92 @@ class FileComparator:
             relative_path=path,
         )
 
+    def _check_initial_sync_preference(
+        self,
+        path: str,
+        source_file: SourceFile,
+        destination_file: DestinationFile,
+    ) -> Optional[SyncDecision]:
+        """Check initial sync preference for files on both sides.
+
+        Returns a SyncDecision if preference applies, None otherwise.
+        """
+        if not (
+            self.sync_mode == SyncMode.TWO_WAY
+            and self.is_initial_sync
+            and self.initial_sync_preference
+        ):
+            return None
+
+        from .modes import InitialSyncPreference
+
+        # For DESTINATION_WINS, download if files differ
+        if self.initial_sync_preference == InitialSyncPreference.DESTINATION_WINS:
+            if source_file.size != destination_file.size:
+                return SyncDecision(
+                    action=SyncAction.DOWNLOAD,
+                    reason=(
+                        "Initial sync (DESTINATION_WINS): "
+                        "downloading destination version"
+                    ),
+                    source_file=source_file,
+                    destination_file=destination_file,
+                    relative_path=path,
+                )
+            # Check hash if sizes match
+            if destination_file.hash:
+                if not self._files_match_by_hash(source_file, destination_file):
+                    return SyncDecision(
+                        action=SyncAction.DOWNLOAD,
+                        reason="Initial sync (DESTINATION_WINS): content differs",
+                        source_file=source_file,
+                        destination_file=destination_file,
+                        relative_path=path,
+                    )
+
+        # For SOURCE_WINS, upload if files differ
+        elif self.initial_sync_preference == InitialSyncPreference.SOURCE_WINS:
+            if source_file.size != destination_file.size:
+                return SyncDecision(
+                    action=SyncAction.UPLOAD,
+                    reason="Initial sync (SOURCE_WINS): uploading source version",
+                    source_file=source_file,
+                    destination_file=destination_file,
+                    relative_path=path,
+                )
+            # Check hash if sizes match
+            if destination_file.hash:
+                if not self._files_match_by_hash(source_file, destination_file):
+                    return SyncDecision(
+                        action=SyncAction.UPLOAD,
+                        reason="Initial sync (SOURCE_WINS): content differs",
+                        source_file=source_file,
+                        destination_file=destination_file,
+                        relative_path=path,
+                    )
+
+        # For MERGE, use normal comparison logic
+        return None
+
+    def _files_match_by_hash(
+        self, source_file: SourceFile, destination_file: DestinationFile
+    ) -> bool:
+        """Check if source and destination files match by hash.
+
+        Returns True if hashes match, False otherwise.
+        """
+        if not destination_file.hash:
+            return True  # Can't verify, assume match
+
+        import hashlib
+
+        try:
+            with open(source_file.path, "rb") as f:
+                source_hash = hashlib.md5(f.read()).hexdigest()
+            return source_hash == destination_file.hash
+        except OSError:
+            return True  # Can't read, assume match
+
     def _compare_existing_files(
         self, path: str, source_file: SourceFile, destination_file: DestinationFile
     ) -> SyncDecision:
@@ -286,6 +372,78 @@ class FileComparator:
                 destination_file=destination_file,
                 relative_path=path,
             )
+
+        # Handle initial sync preferences for files that exist on both sides
+        if (
+            self.sync_mode == SyncMode.TWO_WAY
+            and self.is_initial_sync
+            and self.initial_sync_preference
+        ):
+            from .modes import InitialSyncPreference
+
+            # For DESTINATION_WINS, always download destination version when
+            # files differ
+            if self.initial_sync_preference == InitialSyncPreference.DESTINATION_WINS:
+                # Only download if files are actually different
+                if source_file.size != destination_file.size:
+                    return SyncDecision(
+                        action=SyncAction.DOWNLOAD,
+                        reason=(
+                            "Initial sync (DESTINATION_WINS): "
+                            "downloading destination version"
+                        ),
+                        source_file=source_file,
+                        destination_file=destination_file,
+                        relative_path=path,
+                    )
+                # Even if sizes match, check hash
+                elif destination_file.hash:
+                    import hashlib
+
+                    try:
+                        with open(source_file.path, "rb") as f:
+                            source_hash = hashlib.md5(f.read()).hexdigest()
+                        if source_hash != destination_file.hash:
+                            return SyncDecision(
+                                action=SyncAction.DOWNLOAD,
+                                reason=(
+                                    "Initial sync (DESTINATION_WINS): content differs"
+                                ),
+                                source_file=source_file,
+                                destination_file=destination_file,
+                                relative_path=path,
+                            )
+                    except OSError:
+                        pass
+            # For SOURCE_WINS, always upload source version when files differ
+            elif self.initial_sync_preference == InitialSyncPreference.SOURCE_WINS:
+                # Only upload if files are actually different
+                if source_file.size != destination_file.size:
+                    return SyncDecision(
+                        action=SyncAction.UPLOAD,
+                        reason="Initial sync (SOURCE_WINS): uploading source version",
+                        source_file=source_file,
+                        destination_file=destination_file,
+                        relative_path=path,
+                    )
+                # Even if sizes match, check hash
+                elif destination_file.hash:
+                    import hashlib
+
+                    try:
+                        with open(source_file.path, "rb") as f:
+                            source_hash = hashlib.md5(f.read()).hexdigest()
+                        if source_hash != destination_file.hash:
+                            return SyncDecision(
+                                action=SyncAction.UPLOAD,
+                                reason="Initial sync (SOURCE_WINS): content differs",
+                                source_file=source_file,
+                                destination_file=destination_file,
+                                relative_path=path,
+                            )
+                    except OSError:
+                        pass
+            # For MERGE, use normal comparison logic (fall through)
 
         # Check if files are identical by size first (quick check)
         if source_file.size == destination_file.size:
