@@ -52,11 +52,11 @@ def test_failed_download_not_marked_synced_traditional():
         # Mock the download operation to fail for test2.txt
         original_download = client.download_file
 
-        def mock_download(hash_value, output_path, progress_callback=None):
+        def mock_download(file_id, output_path, progress_callback=None):
             if "test2.txt" in str(output_path):
                 # Simulate failed download - don't create the file
                 raise Exception("Simulated download failure for test2.txt")
-            return original_download(hash_value, output_path, progress_callback)
+            return original_download(file_id, output_path, progress_callback)
 
         with patch.object(client, "download_file", side_effect=mock_download):
             # Sync with DESTINATION_WINS
@@ -153,11 +153,11 @@ def test_failed_download_not_marked_synced_streaming():
         # Mock the download operation to fail for test2.txt
         original_download = client.download_file
 
-        def mock_download(hash_value, output_path, progress_callback=None):
+        def mock_download(file_id, output_path, progress_callback=None):
             if "test2.txt" in str(output_path):
                 # Simulate failed download - don't create the file
                 raise Exception("Simulated download failure for test2.txt")
-            return original_download(hash_value, output_path, progress_callback)
+            return original_download(file_id, output_path, progress_callback)
 
         with patch.object(client, "download_file", side_effect=mock_download):
             # Sync with DESTINATION_WINS in streaming mode
@@ -424,7 +424,7 @@ def test_download_size_verification():
         pair = SyncPair(source=source, destination="", sync_mode=SyncMode.TWO_WAY)
 
         # Mock download to write corrupted/incomplete file
-        def mock_download_corrupted(hash_value, output_path, **kwargs):
+        def mock_download_corrupted(file_id, output_path, **kwargs):
             # Write corrupted file with wrong size
             output_path.parent.mkdir(parents=True, exist_ok=True)
             output_path.write_text("x" * 50)  # Only 50 bytes instead of 100

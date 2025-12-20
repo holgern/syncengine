@@ -33,6 +33,31 @@ New Features
 * Still respects ``files_to_skip`` and ``file_renames`` parameters
 * In ``TWO_WAY`` mode, ``force_upload`` takes precedence when both flags are set
 
+**Comparison Modes (NEW)**
+
+* Added ``ComparisonMode`` enum for flexible file comparison strategies
+* **HASH_THEN_MTIME**: Default - uses hash when available, falls back to mtime
+* **SIZE_ONLY**: For encrypted storage where hash is unavailable (e.g., encrypted vaults)
+* **HASH_ONLY**: Strict content verification, ignores timestamps
+* **MTIME_ONLY**: Fast time-based sync without hash computation
+* **SIZE_AND_MTIME**: Balanced approach for reliable systems
+* SIZE_ONLY and HASH_ONLY modes correctly handle mtime unreliability:
+
+  * In TWO_WAY mode: Different files → CONFLICT (cannot determine newer file)
+  * In one-way modes: Uses sync direction to determine winner
+
+* Solves encrypted vault sync issues where mtime = upload time (not original file time)
+* Configurable via ``SyncConfig.comparison_mode`` parameter
+* Added 22 comprehensive tests for all comparison modes
+
+**Protocol Breaking Changes**
+
+* Updated ``StorageClientProtocol.download_file()`` signature:
+
+  * Changed parameter from ``hash_value: str`` to ``file_id: str``
+  * This clarifies that file ID (not hash) is used for download operations
+  * More intuitive for encrypted storage backends where hash != file ID
+
 API Changes
 ~~~~~~~~~~~
 
@@ -47,9 +72,17 @@ API Changes
        parent_id=1234,  # NEW: Upload into specific folder
    )
 
+   # New: SyncConfig with comparison_mode
+   from syncengine.models import ComparisonMode, SyncConfig
+
+   config = SyncConfig(
+       comparison_mode=ComparisonMode.SIZE_ONLY  # NEW: For encrypted storage
+   )
+
    # New: sync_pair() with skip and rename
    stats = engine.sync_pair(
        pair,
+       config=config,  # NEW: Pass config with comparison mode
        sync_progress_tracker=tracker,
        files_to_skip={"file1.txt", "file2.txt"},  # NEW
        file_renames={"old.txt": "new.txt"},       # NEW
@@ -73,6 +106,9 @@ Benefits
 * **Direct folder uploads**: Upload into specific folders without path resolution overhead
 * **Replace operations**: Force re-upload/re-download files even when content is identical
 * **Flexible control**: Choose between smart comparison or forced operations per use case
+* **Encrypted storage support**: SIZE_ONLY mode enables sync with encrypted vaults where hash is unavailable
+* **Performance optimization**: Choose comparison strategy based on your needs (fast mtime-only vs strict hash verification)
+* **Conflict prevention**: SIZE_ONLY and HASH_ONLY modes properly handle unreliable mtime scenarios
 
 Improvements
 ~~~~~~~~~~~~
@@ -84,15 +120,60 @@ Improvements
 Bug Fixes
 ~~~~~~~~~
 
-* None (new feature release)
+* **Fixed critical issue**: Failed download/upload operations are no longer incorrectly marked as synced in state file
+* **Fixed SIZE_ONLY and HASH_ONLY behavior**: These modes now correctly avoid using mtime when it's unreliable
+* **Fixed protocol signature**: ``download_file()`` now uses ``file_id`` parameter instead of ``hash_value`` for clarity
 
 Breaking Changes
 ~~~~~~~~~~~~~~~~
 
-* **None** - All changes are backward compatible
+* **StorageClientProtocol.download_file()** signature changed:
+
+  * Old: ``download_file(hash_value: str, output_path: Path, ...)``
+  * New: ``download_file(file_id: str, output_path: Path, ...)``
+  * **Action required**: Update custom storage client implementations to use ``file_id`` parameter
+  * **Rationale**: Separates file identity (ID) from content comparison (hash)
 
 Migration Guide
 ~~~~~~~~~~~~~~~
+
+**StorageClientProtocol Implementation (REQUIRED)**
+
+If you have a custom storage client, update the ``download_file()`` method:
+
+.. code-block:: python
+
+   # Old implementation
+   class MyStorageClient(StorageClientProtocol):
+       def download_file(self, hash_value: str, output_path: Path, ...):
+           file_id = hash_value  # Hash was used as ID
+           self.api.download(file_id, output_path)
+
+   # New implementation
+   class MyStorageClient(StorageClientProtocol):
+       def download_file(self, file_id: str, output_path: Path, ...):
+           # Now explicitly uses file ID
+           self.api.download(file_id, output_path)
+
+**Using Comparison Modes (OPTIONAL)**
+
+For encrypted storage or when hash is unavailable:
+
+.. code-block:: python
+
+   from syncengine.models import ComparisonMode, SyncConfig
+
+   # Encrypted vault where hash is unavailable/unreliable
+   config = SyncConfig(
+       comparison_mode=ComparisonMode.SIZE_ONLY
+   )
+
+   # Use SOURCE_TO_DESTINATION for initial upload to avoid conflicts
+   engine = SyncEngine(mode=SyncMode.SOURCE_TO_DESTINATION)
+   stats = engine.sync_pair(pair, config=config)
+
+   # Files with same size are considered identical
+   # Subsequent syncs won't re-upload unchanged files
 
 **Old API (still works):**
 
@@ -180,14 +261,21 @@ Documentation
 Testing
 ~~~~~~~
 
-* All 438 tests pass (433 existing + 5 new for force upload/download)
+* All 484 tests pass (462 existing + 22 new)
 * New tests cover:
 
+  * All 5 comparison modes (HASH_THEN_MTIME, SIZE_ONLY, HASH_ONLY, MTIME_ONLY, SIZE_AND_MTIME)
+  * SIZE_ONLY behavior with TWO_WAY sync (conflicts when files differ)
+  * SIZE_ONLY behavior with one-way sync modes (uses sync direction)
+  * HASH_ONLY behavior with TWO_WAY sync (conflicts when hashes differ)
+  * HASH_ONLY behavior with one-way sync modes (uses sync direction)
+  * Comparison mode configuration
   * Force upload in incremental mode
   * Force upload respects files_to_skip parameter
   * Force upload in traditional (TWO_WAY) mode
   * Force download in traditional (TWO_WAY) mode
   * Force flags precedence behavior (force_upload takes precedence)
+  * Failed operation verification (downloads/uploads not marked synced on failure)
 
 * No regressions introduced
 * Production-ready and battle-tested

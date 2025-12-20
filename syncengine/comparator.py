@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from enum import Enum
 from typing import TYPE_CHECKING, Optional
 
+from .models import ComparisonMode
 from .modes import SyncMode
 from .scanner import DestinationFile, SourceFile
 from .state import DestinationTree, SourceTree
@@ -88,6 +89,7 @@ class FileComparator:
         force_download: bool = False,
         is_initial_sync: bool = False,
         initial_sync_preference: Optional["InitialSyncPreference"] = None,
+        comparison_mode: ComparisonMode = ComparisonMode.HASH_THEN_MTIME,
     ):
         """Initialize file comparator.
 
@@ -108,8 +110,11 @@ class FileComparator:
             initial_sync_preference: How to handle files on only one side during
                                     initial sync (only applies if is_initial_sync=True
                                     and sync_mode=TWO_WAY)
+            comparison_mode: How to compare files (hash, size, mtime). Defaults
+                           to HASH_THEN_MTIME for backward compatibility.
         """
         self.sync_mode = sync_mode
+        self.comparison_mode = comparison_mode
         self.previous_synced_files = previous_synced_files or set()
         self.previous_source_tree = previous_source_tree
         self.previous_destination_tree = previous_destination_tree
@@ -210,6 +215,106 @@ class FileComparator:
                     if current_path != prev_path:
                         # Destination rename detected!
                         self._destination_renames[dest_id] = current_path
+
+    def _files_match_by_comparison_mode(
+        self,
+        source_file: SourceFile,
+        destination_file: DestinationFile,
+    ) -> tuple[bool, str]:
+        """Check if files match according to comparison mode.
+
+        This method only determines IF files are considered identical based on
+        the configured comparison mode (SIZE_ONLY, HASH_ONLY, etc.).
+
+        If files DON'T match, the calling code (_compare_single_file) will use
+        mtime to determine WHICH DIRECTION to sync (upload vs download).
+
+        Returns:
+            Tuple of (files_match: bool, reason: str)
+        """
+        if self.comparison_mode == ComparisonMode.SIZE_ONLY:
+            # SIZE_ONLY: Files match if sizes are equal
+            if source_file.size == destination_file.size:
+                return True, "Files are identical (same size)"
+            return (
+                False,
+                f"Different sizes ({source_file.size} vs {destination_file.size})",
+            )
+
+        elif self.comparison_mode == ComparisonMode.SIZE_AND_MTIME:
+            # SIZE_AND_MTIME: Files match if size AND mtime match
+            if source_file.size != destination_file.size:
+                return (
+                    False,
+                    f"Different sizes ({source_file.size} vs {destination_file.size})",
+                )
+
+            # Check mtime with 2-second tolerance
+            if destination_file.mtime is None:
+                # No mtime available - fall back to size-only
+                return True, "Files are identical (same size, no mtime)"
+
+            time_diff = abs(source_file.mtime - destination_file.mtime)
+            if time_diff < 2:
+                return True, "Files are identical (same size and mtime)"
+            return False, "Different modification times"
+
+        elif self.comparison_mode == ComparisonMode.MTIME_ONLY:
+            # MTIME_ONLY: Files match if mtime matches (within tolerance)
+            if destination_file.mtime is None:
+                # No mtime - cannot compare
+                return False, "Cannot compare (no destination mtime)"
+
+            time_diff = abs(source_file.mtime - destination_file.mtime)
+            if time_diff < 2:
+                return True, "Files are identical (same mtime)"
+            return False, "Different modification times"
+
+        elif self.comparison_mode == ComparisonMode.HASH_ONLY:
+            # HASH_ONLY: Files match ONLY if hashes match (strict)
+            if not destination_file.hash:
+                raise ValueError(
+                    f"HASH_ONLY mode requires destination hash for {source_file.path}"
+                )
+
+            # Compute source hash
+            import hashlib
+
+            try:
+                with open(source_file.path, "rb") as f:
+                    source_hash = hashlib.md5(f.read()).hexdigest()
+
+                if source_hash == destination_file.hash:
+                    return True, "Files are identical (same hash)"
+                return False, "Content differs (hash mismatch)"
+            except OSError as e:
+                # Can't read file - treat as mismatch
+                return False, f"Cannot read source file: {e}"
+
+        else:  # HASH_THEN_MTIME (default)
+            # First check sizes (quick check)
+            if source_file.size != destination_file.size:
+                return (
+                    False,
+                    f"Different sizes ({source_file.size} vs {destination_file.size})",
+                )
+
+            # Sizes match - check hash if available
+            if destination_file.hash:
+                import hashlib
+
+                try:
+                    with open(source_file.path, "rb") as f:
+                        source_hash = hashlib.md5(f.read()).hexdigest()
+
+                    if source_hash != destination_file.hash:
+                        return False, "Content differs (hash mismatch)"
+                except OSError:
+                    # Can't read file - fall back to size match
+                    pass
+
+            # Files match (same size, and hash if available)
+            return True, "Files are identical (same size and hash)"
 
     def _compare_single_file(
         self,
@@ -445,120 +550,147 @@ class FileComparator:
                         pass
             # For MERGE, use normal comparison logic (fall through)
 
-        # Check if files are identical by size first (quick check)
-        if source_file.size == destination_file.size:
-            # Sizes match - check hash if available for content verification
-            # Destination files always have a hash from the API
-            if destination_file.hash:
-                # Compute source file hash for comparison
-                import hashlib
+        # PHASE 1: Use comparison mode to check if files match
+        # The comparison mode (SIZE_ONLY, HASH_ONLY, etc.) determines WHAT to compare
+        # to decide if files are identical.
+        files_match, reason = self._files_match_by_comparison_mode(
+            source_file, destination_file
+        )
 
-                try:
-                    with open(source_file.path, "rb") as f:
-                        source_hash = hashlib.md5(f.read()).hexdigest()
-
-                    if source_hash != destination_file.hash:
-                        # Hashes don't match - files are different
-                        # despite same size (rare case)
-                        if self.sync_mode.allows_upload:
-                            return SyncDecision(
-                                action=SyncAction.UPLOAD,
-                                reason="Content differs (hash mismatch)",
-                                source_file=source_file,
-                                destination_file=destination_file,
-                                relative_path=path,
-                            )
-                        elif self.sync_mode.allows_download:
-                            return SyncDecision(
-                                action=SyncAction.DOWNLOAD,
-                                reason="Content differs (hash mismatch)",
-                                source_file=source_file,
-                                destination_file=destination_file,
-                                relative_path=path,
-                            )
-                except OSError:
-                    # Can't read source file - treat as if sizes match and skip
-                    pass
-
-            # Files are identical (same size and hash) - skip
+        if files_match:
+            # Files are identical according to comparison mode
             return SyncDecision(
                 action=SyncAction.SKIP,
-                reason="Files are identical (same size and hash)",
-                source_file=source_file,
-                destination_file=destination_file,
-                relative_path=path,
-            )
-
-        # Files are different - check modification times
-        if destination_file.mtime is None:
-            # No destination mtime - can't compare, prefer source for safety
-            if self.sync_mode.allows_upload:
-                return SyncDecision(
-                    action=SyncAction.UPLOAD,
-                    reason="Destination mtime unavailable, uploading source version",
-                    source_file=source_file,
-                    destination_file=destination_file,
-                    relative_path=path,
-                )
-            else:
-                return SyncDecision(
-                    action=SyncAction.SKIP,
-                    reason="Different sizes but cannot determine which is newer",
-                    source_file=source_file,
-                    destination_file=destination_file,
-                    relative_path=path,
-                )
-
-        # Compare modification times
-        source_mtime = source_file.mtime
-        destination_mtime = destination_file.mtime
-
-        # Allow 2 second tolerance for filesystem differences
-        time_diff = abs(source_mtime - destination_mtime)
-        if time_diff < 2:
-            # Times are essentially the same but sizes differ - conflict
-            reason = (
-                f"Same timestamp but different sizes "
-                f"({source_file.size} vs {destination_file.size})"
-            )
-            return SyncDecision(
-                action=SyncAction.CONFLICT,
                 reason=reason,
                 source_file=source_file,
                 destination_file=destination_file,
                 relative_path=path,
             )
 
-        # Determine which is newer
-        if source_mtime > destination_mtime:
-            # Source is newer
-            if self.sync_mode.allows_upload:
+        # PHASE 2: Files don't match - determine sync direction
+        # Strategy depends on whether the comparison mode allows mtime-based decisions
+
+        if self.comparison_mode in (
+            ComparisonMode.SIZE_ONLY,
+            ComparisonMode.HASH_ONLY,
+        ):
+            # These modes are chosen when mtime is UNRELIABLE
+            # (e.g., encrypted vault where mtime = upload time, not file mtime)
+            # Cannot use mtime to determine direction - use sync mode instead
+
+            if self.sync_mode == SyncMode.TWO_WAY:
+                # Can't determine which file is newer without mtime - CONFLICT
                 return SyncDecision(
-                    action=SyncAction.UPLOAD,
-                    reason="Source file is newer",
-                    source_file=source_file,
-                    destination_file=destination_file,
-                    relative_path=path,
-                )
-        else:
-            # Destination is newer
-            if self.sync_mode.allows_download:
-                return SyncDecision(
-                    action=SyncAction.DOWNLOAD,
-                    reason="Destination file is newer",
+                    action=SyncAction.CONFLICT,
+                    reason=f"{reason} (cannot determine newer file)",
                     source_file=source_file,
                     destination_file=destination_file,
                     relative_path=path,
                 )
 
-        # Can't sync due to mode restrictions
-        return SyncDecision(
-            action=SyncAction.SKIP,
-            reason=f"Files differ but sync mode {self.sync_mode.value} prevents action",
-            source_file=source_file,
-            destination_file=destination_file,
-            relative_path=path,
-        )
+            elif self.sync_mode.allows_upload:
+                # One-way sync to destination: prefer source
+                return SyncDecision(
+                    action=SyncAction.UPLOAD,
+                    reason=f"{reason} (sync mode prefers source)",
+                    source_file=source_file,
+                    destination_file=destination_file,
+                    relative_path=path,
+                )
+
+            elif self.sync_mode.allows_download:
+                # One-way sync from destination: prefer destination
+                return SyncDecision(
+                    action=SyncAction.DOWNLOAD,
+                    reason=f"{reason} (sync mode prefers destination)",
+                    source_file=source_file,
+                    destination_file=destination_file,
+                    relative_path=path,
+                )
+
+            # Can't sync due to mode restrictions
+            return SyncDecision(
+                action=SyncAction.SKIP,
+                reason=f"{reason} (sync mode prevents action)",
+                source_file=source_file,
+                destination_file=destination_file,
+                relative_path=path,
+            )
+
+        else:
+            # HASH_THEN_MTIME, MTIME_ONLY, SIZE_AND_MTIME: mtime is reliable
+            # Use mtime to determine which file is newer
+
+            if destination_file.mtime is None:
+                # No destination mtime - can't determine which is newer
+                # Prefer source for safety (avoids data loss)
+                if self.sync_mode.allows_upload:
+                    return SyncDecision(
+                        action=SyncAction.UPLOAD,
+                        reason=f"{reason} (destination mtime unavailable)",
+                        source_file=source_file,
+                        destination_file=destination_file,
+                        relative_path=path,
+                    )
+                elif self.sync_mode.allows_download:
+                    # Download mode but can't determine which is newer - skip
+                    return SyncDecision(
+                        action=SyncAction.SKIP,
+                        reason=f"{reason} (cannot determine which is newer)",
+                        source_file=source_file,
+                        destination_file=destination_file,
+                        relative_path=path,
+                    )
+
+            # Compare modification times to determine which file is newer
+            source_mtime = source_file.mtime
+            # At this point, destination_mtime is not None (checked above)
+            assert destination_file.mtime is not None
+            destination_mtime = destination_file.mtime
+
+            # Allow 2 second tolerance for filesystem differences
+            time_diff = abs(source_mtime - destination_mtime)
+            if time_diff < 2:
+                # Times are essentially the same but files differ
+                # This is a conflict
+                return SyncDecision(
+                    action=SyncAction.CONFLICT,
+                    reason=f"Same timestamp but {reason.lower()}",
+                    source_file=source_file,
+                    destination_file=destination_file,
+                    relative_path=path,
+                )
+
+            # Determine which is newer
+            if source_mtime > destination_mtime:
+                # Source is newer
+                if self.sync_mode.allows_upload:
+                    return SyncDecision(
+                        action=SyncAction.UPLOAD,
+                        reason="Source file is newer",
+                        source_file=source_file,
+                        destination_file=destination_file,
+                        relative_path=path,
+                    )
+            else:
+                # Destination is newer
+                if self.sync_mode.allows_download:
+                    return SyncDecision(
+                        action=SyncAction.DOWNLOAD,
+                        reason="Destination file is newer",
+                        source_file=source_file,
+                        destination_file=destination_file,
+                        relative_path=path,
+                    )
+
+            # Can't sync due to mode restrictions
+            return SyncDecision(
+                action=SyncAction.SKIP,
+                reason="Files differ but sync mode prevents action",
+                source_file=source_file,
+                destination_file=destination_file,
+                relative_path=path,
+            )
 
     def _handle_source_only(
         self,

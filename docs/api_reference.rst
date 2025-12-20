@@ -58,7 +58,7 @@ SyncEngine
 SyncPair
 ~~~~~~~~
 
-.. class:: SyncPair(source_root, destination_root, source_client, destination_client, mode=SyncMode.TWO_WAY, ignore_manager=None, conflict_resolution=ConflictResolution.NEWEST_WINS)
+.. class:: SyncPair(source_root, destination_root, source_client, destination_client, mode=SyncMode.TWO_WAY, comparison_mode=ComparisonMode.HASH_THEN_MTIME, ignore_manager=None, conflict_resolution=ConflictResolution.NEWEST_WINS)
 
    Represents a source-destination pair for synchronization.
 
@@ -67,6 +67,7 @@ SyncPair
    :param StorageClientProtocol source_client: Storage client for source
    :param StorageClientProtocol destination_client: Storage client for destination
    :param SyncMode mode: Synchronization mode (default: TWO_WAY)
+   :param ComparisonMode comparison_mode: File comparison mode (default: HASH_THEN_MTIME)
    :param IgnoreFileManager ignore_manager: Ignore pattern manager (optional)
    :param ConflictResolution conflict_resolution: Conflict resolution strategy (default: NEWEST_WINS)
 
@@ -81,6 +82,10 @@ SyncPair
    .. attribute:: mode
 
       Synchronization mode.
+
+   .. attribute:: comparison_mode
+
+      File comparison mode for determining if files are identical.
 
    .. attribute:: ignore_manager
 
@@ -152,6 +157,65 @@ SyncMode
    .. property:: is_bidirectional
 
       Check if this mode syncs in both directions.
+
+ComparisonMode
+~~~~~~~~~~~~~~
+
+.. class:: ComparisonMode
+
+   File comparison strategies for determining if files are identical.
+
+   .. attribute:: HASH_THEN_MTIME
+
+      Default balanced mode. Compares hash if available, falls back to mtime.
+      Files considered identical if sizes equal AND (hashes equal OR hash unavailable).
+
+   .. attribute:: SIZE_ONLY
+
+      Size-only comparison. Ignores hash and mtime completely.
+      Files considered identical if sizes equal.
+
+      Use when:
+      * Hash is unavailable or unreliable (e.g., encrypted storage)
+      * Mtime is unreliable (e.g., upload time vs original file time)
+
+      Behavior with TWO_WAY sync:
+      * Files with different sizes → CONFLICT (cannot determine newer file)
+      * One-way sync uses sync direction to determine which file wins
+
+   .. attribute:: HASH_ONLY
+
+      Strict hash-only comparison. Ignores size and mtime.
+      Files considered identical only if hashes match.
+      Raises error if hash unavailable.
+
+      Use when:
+      * Strict content verification required
+      * Mtime is completely unreliable
+
+      Behavior with TWO_WAY sync:
+      * Files with different hashes → CONFLICT (cannot determine newer file)
+      * One-way sync uses sync direction to determine which file wins
+
+   .. attribute:: MTIME_ONLY
+
+      Time-only comparison. Ignores size and hash.
+      Files considered identical if mtimes match (±2 second tolerance).
+
+      Use when:
+      * Performance critical (skips hash computation)
+      * Timestamps are reliable
+      * Large files where hashing is expensive
+
+   .. attribute:: SIZE_AND_MTIME
+
+      Balanced comparison without hash. Compares both size AND mtime.
+      Files considered identical if size equal AND mtime equal (±2 second tolerance).
+
+      Use when:
+      * Hash unavailable but mtime is reliable
+      * Need more accuracy than SIZE_ONLY
+      * Good balance of performance and reliability
 
 SyncAction
 ~~~~~~~~~~

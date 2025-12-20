@@ -35,7 +35,7 @@ from .constants import (
 )
 from .engine import SyncEngine
 from .ignore import IgnoreFileManager, IgnoreRule, load_ignore_file
-from .models import FileEntry, SyncConfig
+from .models import FileEntry, SyncConfig, ComparisonMode
 from .modes import SyncMode, InitialSyncPreference
 from .operations import SyncOperations
 from .pair import SyncPair
@@ -113,6 +113,7 @@ __all__ = [
     # Models
     "FileEntry",
     "SyncConfig",
+    "ComparisonMode",
     # Constants
     "DEFAULT_CHUNK_SIZE",
     "DEFAULT_MULTIPART_THRESHOLD",

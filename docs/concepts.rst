@@ -65,6 +65,219 @@ State Comparison Matrix
      - None
      - Deleted both sides
 
+Comparison Modes
+----------------
+
+Comparison modes control how SyncEngine determines if two files are identical. This is crucial for
+deciding whether to skip a file or sync it.
+
+Available Comparison Modes
+~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+SyncEngine provides five comparison modes, each optimized for different scenarios:
+
+**HASH_THEN_MTIME** (Default)
+
+Balanced approach that uses hash when available, falls back to mtime:
+
+.. code-block:: python
+
+   from syncengine.models import ComparisonMode, SyncConfig
+
+   config = SyncConfig(
+       comparison_mode=ComparisonMode.HASH_THEN_MTIME
+   )
+
+How it works:
+
+1. Compare file sizes first (fast check)
+2. If both files have hash values, compare hashes
+3. If hash unavailable, compare modification times
+4. Files with matching hash are considered identical, even if mtime differs
+
+**SIZE_ONLY**
+
+Only compares file sizes, ignores hash and mtime:
+
+.. code-block:: python
+
+   config = SyncConfig(
+       comparison_mode=ComparisonMode.SIZE_ONLY
+   )
+
+How it works:
+
+1. Files with same size are considered identical
+2. Hash and mtime are completely ignored
+3. When sizes differ in TWO_WAY mode → CONFLICT (cannot determine newer file)
+4. When sizes differ in one-way mode → Uses sync direction
+
+Use cases:
+
+* Encrypted storage where hash is unavailable or unreliable
+* Cloud vaults where mtime is upload time, not original file time
+* Scenarios where hash computation is too expensive
+
+**HASH_ONLY**
+
+Strict content verification using only hash, ignores size and mtime:
+
+.. code-block:: python
+
+   config = SyncConfig(
+       comparison_mode=ComparisonMode.HASH_ONLY
+   )
+
+How it works:
+
+1. Only compares content hashes
+2. Raises error if hash is unavailable
+3. When hashes differ in TWO_WAY mode → CONFLICT (cannot determine newer file)
+4. When hashes differ in one-way mode → Uses sync direction
+
+Use cases:
+
+* Content-critical applications requiring strict verification
+* Systems where mtime is completely unreliable
+* Hash is always available and trusted
+
+**MTIME_ONLY**
+
+Fast time-based sync without hash computation:
+
+.. code-block:: python
+
+   config = SyncConfig(
+       comparison_mode=ComparisonMode.MTIME_ONLY
+   )
+
+How it works:
+
+1. Only compares modification times (±2 second tolerance)
+2. Ignores file size and hash
+3. When mtimes differ → Newer file wins
+
+Use cases:
+
+* Performance-critical scenarios with reliable timestamps
+* Large files where hash computation is expensive
+* Systems with accurate clock synchronization
+
+**SIZE_AND_MTIME**
+
+Balanced approach for systems without hash support:
+
+.. code-block:: python
+
+   config = SyncConfig(
+       comparison_mode=ComparisonMode.SIZE_AND_MTIME
+   )
+
+How it works:
+
+1. Files must match in BOTH size AND mtime (±2 second tolerance)
+2. Hash is completely ignored
+3. When files differ → Newer file wins (uses mtime)
+
+Use cases:
+
+* Storage backends that don't provide content hashes
+* Reliable systems with accurate timestamps
+* Balance between performance and accuracy
+
+Comparison Mode Behavior Matrix
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. list-table::
+   :header-rows: 1
+   :widths: 20 20 20 40
+
+   * - Mode
+     - Files Match If
+     - Files Differ Direction
+     - Best For
+   * - HASH_THEN_MTIME
+     - Size equal AND (hash equal OR hash unavailable)
+     - Uses mtime to determine newer
+     - Most scenarios (default)
+   * - SIZE_ONLY
+     - Size equal
+     - TWO_WAY: CONFLICT, One-way: sync direction
+     - Encrypted vaults, unreliable mtime
+   * - HASH_ONLY
+     - Hash equal
+     - TWO_WAY: CONFLICT, One-way: sync direction
+     - Content-critical, unreliable mtime
+   * - MTIME_ONLY
+     - Mtime equal (±2s)
+     - Uses mtime to determine newer
+     - Performance-critical, reliable clocks
+   * - SIZE_AND_MTIME
+     - Size equal AND mtime equal (±2s)
+     - Uses mtime to determine newer
+     - No hash support, reliable timestamps
+
+Important: SIZE_ONLY and HASH_ONLY with TWO_WAY Sync
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+When using ``SIZE_ONLY`` or ``HASH_ONLY`` comparison modes with ``TWO_WAY`` sync mode,
+files that differ will result in **CONFLICT** because:
+
+* These modes are chosen specifically when **mtime is unreliable**
+* Without reliable mtime, the engine cannot determine which file is newer
+* In one-way sync modes, the sync direction determines which file wins
+
+Example: Encrypted Vault Sync
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   from syncengine import SyncEngine
+   from syncengine.models import ComparisonMode, SyncConfig
+   from syncengine.modes import SyncMode
+
+   # Vault doesn't provide content hashes
+   # Vault mtime is upload time, not original file mtime
+   config = SyncConfig(
+       comparison_mode=ComparisonMode.SIZE_ONLY
+   )
+
+   # For initial upload, use SOURCE_TO_DESTINATION
+   # This avoids conflicts since sync direction is clear
+   engine = SyncEngine(mode=SyncMode.SOURCE_TO_DESTINATION)
+   stats = engine.sync_pair(pair, config=config)
+
+   # Files with same size are considered identical
+   # No re-uploads on subsequent syncs!
+
+Example: Strict Content Verification
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   config = SyncConfig(
+       comparison_mode=ComparisonMode.HASH_ONLY
+   )
+
+   # Requires hash on both sides
+   # Ignores timestamps completely
+   # Ensures content integrity
+   stats = engine.sync_pair(pair, config=config)
+
+Example: Fast Time-Based Sync
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+.. code-block:: python
+
+   config = SyncConfig(
+       comparison_mode=ComparisonMode.MTIME_ONLY
+   )
+
+   # Skips hash computation for large files
+   # Relies on accurate timestamps
+   # Much faster for large datasets
+   stats = engine.sync_pair(pair, config=config)
+
 Sync Actions
 ------------
 

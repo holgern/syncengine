@@ -453,6 +453,7 @@ class SyncEngine:
             force_download,
             is_initial_sync,
             initial_sync_preference,
+            comparison_mode=self.config.comparison_mode,
         )
         decisions = comparator.compare_files(local_file_map, remote_file_map)
 
@@ -2118,6 +2119,7 @@ class SyncEngine:
             force_download,
             is_initial_sync,
             initial_sync_preference,
+            comparison_mode=self.config.comparison_mode,
         )
         batch_decisions = []
 
@@ -2394,6 +2396,7 @@ class SyncEngine:
             force_download,
             is_initial_sync,
             initial_sync_preference,
+            comparison_mode=self.config.comparison_mode,
         )
         local_decisions = []
 
@@ -3943,7 +3946,9 @@ class SyncEngine:
             local_file_map = {f.relative_path: f for f in local_files}
 
         # Compare and create decisions
-        comparator = FileComparator(sync_mode)
+        comparator = FileComparator(
+            sync_mode, comparison_mode=self.config.comparison_mode
+        )
         decisions = comparator.compare_files(local_file_map, remote_file_map)
 
         # Filter to only download actions

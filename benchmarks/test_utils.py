@@ -130,39 +130,39 @@ class LocalStorageClient:
 
     def download_file(
         self,
-        hash_value: str,
+        file_id: str,
         output_path: Path,
         progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> Path:
         """Download a file from simulated cloud storage.
 
-        Note: For this mock, we need to find the file by hash which is inefficient.
-        In real usage, we'd use the file path directly.
-
         Args:
-            hash_value: Content hash of the file
+            file_id: File entry ID (as string) to download
             output_path: Local path where file should be saved
             progress_callback: Progress callback
 
         Returns:
             Path where file was saved
         """
-        # Search for file with matching hash in storage
-        for file_path in self.storage_root.rglob("*"):
-            if file_path.is_file():
-                with open(file_path, "rb") as f:
-                    file_hash = hashlib.md5(f.read()).hexdigest()
-                if file_hash == hash_value:
-                    output_path.parent.mkdir(parents=True, exist_ok=True)
-                    shutil.copy2(file_path, output_path)
+        # Find file by ID in the ID map
+        entry_id = int(file_id)
+        file_path = None
+        for path, eid in self._id_map.items():
+            if eid == entry_id:
+                file_path = self.storage_root / path
+                break
 
-                    if progress_callback:
-                        size = file_path.stat().st_size
-                        progress_callback(size, size)
+        if not file_path or not file_path.exists() or not file_path.is_file():
+            raise FileNotFoundError(f"No file with ID {file_id} found in storage")
 
-                    return output_path
+        output_path.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(file_path, output_path)
 
-        raise FileNotFoundError(f"No file with hash {hash_value} found in storage")
+        if progress_callback:
+            size = file_path.stat().st_size
+            progress_callback(size, size)
+
+        return output_path
 
     def delete_file_entries(
         self,

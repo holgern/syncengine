@@ -221,6 +221,7 @@ class TestSyncOperationsDownloadFile:
         ops = SyncOperations(mock_client)
 
         mock_entry = MagicMock()
+        mock_entry.id = 42
         mock_entry.hash = "abc123"
         remote_file = DestinationFile(entry=mock_entry, relative_path="remote/file.txt")
 
@@ -237,7 +238,7 @@ class TestSyncOperationsDownloadFile:
         assert local_path.parent.exists()
 
         mock_client.download_file.assert_called_once_with(
-            hash_value="abc123",
+            file_id="42",
             output_path=local_path,
             progress_callback=progress_cb,
         )

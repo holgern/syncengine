@@ -52,11 +52,20 @@ conflicts, and provides multiple synchronization modes to fit different use case
   - `DESTINATION_TO_SOURCE`: Mirror destination to source (cloud download)
   - `DESTINATION_BACKUP`: Protect local backup from remote changes
 
-- **Intelligent Change Detection**
+- **Intelligent Change Detection** ✨ ENHANCED
 
+  - Multiple comparison modes for different scenarios
   - Tracks file modifications via timestamps and sizes
   - Detects renames and moves
   - Identifies conflicts when both sides change
+
+- **Comparison Modes** ✨ NEW
+
+  - `HASH_THEN_MTIME`: Default - uses hash when available, falls back to mtime
+  - `SIZE_ONLY`: For encrypted storage where hash is unavailable
+  - `HASH_ONLY`: Strict content verification, ignores timestamps
+  - `MTIME_ONLY`: Fast time-based sync without hash computation
+  - `SIZE_AND_MTIME`: Balanced approach for reliable systems
 
 - **Flexible Conflict Resolution**
 
@@ -102,6 +111,7 @@ conflicts, and provides multiple synchronization modes to fit different use case
 
 ```python
 from syncengine import SyncEngine, SyncMode, LocalStorageClient, SyncPair
+from syncengine.models import ComparisonMode
 
 # Create storage clients
 source = LocalStorageClient("/path/to/source")
@@ -110,12 +120,13 @@ destination = LocalStorageClient("/path/to/destination")
 # Create sync engine
 engine = SyncEngine(mode=SyncMode.TWO_WAY)
 
-# Create sync pair
+# Create sync pair with SIZE_ONLY comparison (for encrypted storage)
 pair = SyncPair(
     source_root="/path/to/source",
     destination_root="/path/to/destination",
     source_client=source,
-    destination_client=destination
+    destination_client=destination,
+    comparison_mode=ComparisonMode.SIZE_ONLY  # Files considered identical if sizes match
 )
 
 # Perform sync
@@ -167,6 +178,44 @@ stats = engine.download_folder(
 | `DESTINATION_TO_SOURCE` | Mirror destination to source | Ignored (deleted) | Download            | Propagated to source      |
 | `DESTINATION_BACKUP`    | Backup from destination      | Ignored           | Download            | Never delete local backup |
 
+## When to Use Each Comparison Mode
+
+Comparison modes control how syncengine determines if files are identical. Choose based
+on your storage backend and performance needs:
+
+| Mode              | Use Case                    | How It Works                                     | Best For                               |
+| ----------------- | --------------------------- | ------------------------------------------------ | -------------------------------------- |
+| `HASH_THEN_MTIME` | Default, balanced           | Compares hash if available, otherwise uses mtime | Most scenarios with reliable storage   |
+| `SIZE_ONLY`       | Encrypted/untrusted storage | Only compares file sizes                         | Encrypted vaults, hash unavailable     |
+| `HASH_ONLY`       | Strict verification         | Requires hash, ignores mtime                     | Content-critical applications          |
+| `MTIME_ONLY`      | Fast sync                   | Only compares timestamps                         | Reliable systems, performance-critical |
+| `SIZE_AND_MTIME`  | Balanced without hash       | Compares size AND timestamp                      | Systems without hash support           |
+
+### Important Notes on Comparison Modes
+
+**SIZE_ONLY and HASH_ONLY with TWO_WAY sync:**
+
+- When files differ, these modes **cannot** use mtime to determine which is newer
+- In `TWO_WAY` mode, different files result in **CONFLICT**
+- In one-way modes (`SOURCE_TO_DESTINATION`, etc.), the sync direction determines which
+  file wins
+- This is intentional: these modes are chosen when mtime is unreliable
+
+**Example: Encrypted Vault Sync**
+
+```python
+from syncengine.models import ComparisonMode, SyncMode
+
+# Vault doesn't provide content hashes and mtime is upload time (not file mtime)
+config = SyncConfig(comparison_mode=ComparisonMode.SIZE_ONLY)
+
+# For initial upload, use SOURCE_TO_DESTINATION to avoid conflicts
+engine = SyncEngine(mode=SyncMode.SOURCE_TO_DESTINATION)
+engine.sync_pair(pair, config=config)
+
+# Files with same size are considered identical, avoiding re-uploads
+```
+
 ## Installation
 
 ```bash
@@ -211,8 +260,9 @@ Full documentation is available at [Read the Docs](https://syncengine.readthedoc
 
 - `syncengine/engine.py` - Main sync engine with force upload/download support
 - `syncengine/modes.py` - Sync mode definitions
+- `syncengine/models.py` - Data models including ComparisonMode enum
 - `syncengine/progress.py` - Progress tracking API with upload/download event support
-- `syncengine/comparator.py` - Change detection and force comparison logic
+- `syncengine/comparator.py` - Change detection with configurable comparison strategies
 - `syncengine/protocols.py` - Storage protocol interfaces
 - `syncengine/config.py` - Configuration options
 

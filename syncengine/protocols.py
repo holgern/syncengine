@@ -22,17 +22,20 @@ class FileEntryProtocol(Protocol):
     to be used with syncengine.
 
     Attributes:
-        id: Unique identifier for the file entry (persists across renames)
+        id: Unique stable identifier for the file entry (persists across
+            renames). Used for file operations like download, delete, and rename.
         type: Entry type - "file" or "folder"
         file_size: Size in bytes (0 for folders)
-        hash: Content hash (e.g., MD5) for integrity verification
+        hash: Content hash (e.g., MD5) for content comparison (optional).
+            Can be empty string if content hashing is unavailable or expensive.
+            NOT used for file identification - use id for that.
         name: File or folder name
         updated_at: ISO timestamp of last modification (optional)
     """
 
     @property
     def id(self) -> int:
-        """Unique identifier for the file entry."""
+        """Unique stable identifier for file operations."""
         ...
 
     @property
@@ -47,7 +50,7 @@ class FileEntryProtocol(Protocol):
 
     @property
     def hash(self) -> str:
-        """Content hash (e.g., MD5)."""
+        """Content hash for comparison (optional, can be empty)."""
         ...
 
     @property
@@ -97,14 +100,14 @@ class StorageClientProtocol(Protocol):
 
     def download_file(
         self,
-        hash_value: str,
+        file_id: str,
         output_path: Path,
         progress_callback: Optional[Callable[[int, int], None]] = None,
     ) -> Path:
         """Download a file from destination storage.
 
         Args:
-            hash_value: Content hash of the file to download
+            file_id: File entry ID (from FileEntry.id) to download
             output_path: Source path where file should be saved
             progress_callback: Callback for download progress (bytes_downloaded, total)
 
