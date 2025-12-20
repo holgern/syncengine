@@ -143,9 +143,172 @@ def test_initial_sync_destination_wins():
         print("✓ DESTINATION_WINS test passed")
 
 
+def test_initial_sync_risk_warning_many_remote():
+    """Test that warnings are shown when destination has many more files."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        source = base / "source"
+        dest_storage = base / "dest"
+        source.mkdir()
+        dest_storage.mkdir()
+
+        # Setup: source has 2 files, dest has 20 files (10x more)
+        for i in range(2):
+            (source / f"source_{i}.txt").write_text(f"source file {i}")
+        for i in range(20):
+            (dest_storage / f"dest_{i}.txt").write_text(f"dest file {i}")
+
+        # Create engine with custom output to capture warnings
+        client = LocalStorageClient(dest_storage)
+        factory = create_entries_manager_factory(client)
+
+        # Capture output
+        captured_output = []
+
+        class CapturingOutput(DefaultOutputHandler):
+            def warning(self, message: str):
+                captured_output.append(("warning", message))
+
+            def info(self, message: str):
+                captured_output.append(("info", message))
+
+        output = CapturingOutput(quiet=False)
+        engine = SyncEngine(client, factory, output=output)
+
+        pair = SyncPair(source=source, destination="", sync_mode=SyncMode.TWO_WAY)
+
+        # Sync WITHOUT setting initial_sync_preference (should trigger warning)
+        _ = engine.sync_pair(
+            pair,
+            use_streaming=False,
+            dry_run=True,  # Use dry-run to avoid actual changes
+            initial_sync_preference=None,  # Explicitly None to test warning
+        )
+
+        # Check that warning was emitted
+        warning_messages = [msg for typ, msg in captured_output if typ == "warning"]
+        assert any(
+            "WARNING" in msg and "Destination has" in msg for msg in warning_messages
+        ), (
+            f"Expected warning about destination having more files. "
+            f"Got: {warning_messages}"
+        )
+
+        print("✓ Risk warning test (many remote) passed")
+
+
+def test_initial_sync_risk_warning_many_local():
+    """Test that warnings are shown when source has many more files."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        source = base / "source"
+        dest_storage = base / "dest"
+        source.mkdir()
+        dest_storage.mkdir()
+
+        # Setup: source has 20 files, dest has 2 files
+        for i in range(20):
+            (source / f"source_{i}.txt").write_text(f"source file {i}")
+        for i in range(2):
+            (dest_storage / f"dest_{i}.txt").write_text(f"dest file {i}")
+
+        # Create engine with custom output to capture warnings
+        client = LocalStorageClient(dest_storage)
+        factory = create_entries_manager_factory(client)
+
+        # Capture output
+        captured_output = []
+
+        class CapturingOutput(DefaultOutputHandler):
+            def warning(self, message: str):
+                captured_output.append(("warning", message))
+
+            def info(self, message: str):
+                captured_output.append(("info", message))
+
+        output = CapturingOutput(quiet=False)
+        engine = SyncEngine(client, factory, output=output)
+
+        pair = SyncPair(source=source, destination="", sync_mode=SyncMode.TWO_WAY)
+
+        # Sync WITHOUT setting initial_sync_preference (should trigger warning)
+        _ = engine.sync_pair(
+            pair,
+            use_streaming=False,
+            dry_run=True,
+            initial_sync_preference=None,
+        )
+
+        # Check that warning was emitted
+        warning_messages = [msg for typ, msg in captured_output if typ == "warning"]
+        assert any(
+            "WARNING" in msg and "Source has" in msg for msg in warning_messages
+        ), f"Expected warning about source having more files. Got: {warning_messages}"
+
+        print("✓ Risk warning test (many local) passed")
+
+
+def test_no_warning_when_preference_set():
+    """Test that warnings are NOT shown when user explicitly sets preference."""
+    with tempfile.TemporaryDirectory() as tmp:
+        base = Path(tmp)
+        source = base / "source"
+        dest_storage = base / "dest"
+        source.mkdir()
+        dest_storage.mkdir()
+
+        # Setup: source has 2 files, dest has 20 files
+        for i in range(2):
+            (source / f"source_{i}.txt").write_text(f"source file {i}")
+        for i in range(20):
+            (dest_storage / f"dest_{i}.txt").write_text(f"dest file {i}")
+
+        # Create engine with custom output to capture warnings
+        client = LocalStorageClient(dest_storage)
+        factory = create_entries_manager_factory(client)
+
+        captured_output = []
+
+        class CapturingOutput(DefaultOutputHandler):
+            def warning(self, message: str):
+                captured_output.append(("warning", message))
+
+            def info(self, message: str):
+                captured_output.append(("info", message))
+
+        output = CapturingOutput(quiet=False)
+        engine = SyncEngine(client, factory, output=output)
+
+        pair = SyncPair(source=source, destination="", sync_mode=SyncMode.TWO_WAY)
+
+        # Sync WITH explicit preference (should NOT trigger warning)
+        _ = engine.sync_pair(
+            pair,
+            use_streaming=False,
+            dry_run=True,
+            initial_sync_preference=InitialSyncPreference.MERGE,  # Explicit
+        )
+
+        # Check that no warning was emitted (user made explicit choice)
+        warning_messages = [msg for typ, msg in captured_output if typ == "warning"]
+        risky_warnings = [
+            msg
+            for msg in warning_messages
+            if "WARNING" in msg and ("Destination has" in msg or "Source has" in msg)
+        ]
+        assert (
+            len(risky_warnings) == 0
+        ), f"Expected NO warning when preference is explicit. Got: {risky_warnings}"
+
+        print("✓ No warning test (explicit preference) passed")
+
+
 if __name__ == "__main__":
     print("Testing Initial Sync Preferences...\n")
     test_initial_sync_merge()
     test_initial_sync_source_wins()
     test_initial_sync_destination_wins()
+    test_initial_sync_risk_warning_many_remote()
+    test_initial_sync_risk_warning_many_local()
+    test_no_warning_when_preference_set()
     print("\n✅ All tests passed!")

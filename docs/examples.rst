@@ -125,7 +125,122 @@ Backup files to cloud without deleting:
        print(f"  Files skipped: {stats.get('skipped', 0)}")
 
    if __name__ == "__main__":
-       backup_to_cloud()
+        backup_to_cloud()
+
+Initial Sync with TWO_WAY Mode
+~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~
+
+Control first-time sync behavior when using TWO_WAY mode (new in v0.3.0):
+
+.. code-block:: python
+
+   from syncengine import (
+       SyncEngine,
+       SyncMode,
+       SyncPair,
+       InitialSyncPreference
+   )
+   from pathlib import Path
+
+   def vault_restoration():
+       """Restore files from cloud vault to local (cloud is master)."""
+
+       # Create sync engine
+       engine = SyncEngine(
+           client=cloud_client,
+           entries_manager_factory=create_entries_manager
+       )
+
+       # Create sync pair
+       pair = SyncPair(
+           source=Path("/home/user/documents"),
+           destination="/vault/documents",
+           sync_mode=SyncMode.TWO_WAY,
+           storage_id=0
+       )
+
+       # First sync: Download from vault, make destination authoritative
+       stats = engine.sync_pair(
+           pair,
+           initial_sync_preference=InitialSyncPreference.DESTINATION_WINS
+       )
+       # Result: Downloads all vault files, deletes local-only files
+
+       print(f"Vault restoration complete!")
+       print(f"  Downloaded: {stats['downloads']} files")
+       print(f"  Deleted local: {stats['deletes_local']} files")
+
+       # Subsequent syncs: Normal TWO_WAY (bidirectional)
+       stats2 = engine.sync_pair(pair)
+       # Now syncs changes in both directions
+
+   def first_time_backup():
+       """First backup of local files to cloud (local is master)."""
+
+       # Create sync engine
+       engine = SyncEngine(
+           client=cloud_client,
+           entries_manager_factory=create_entries_manager
+       )
+
+       # Create sync pair
+       pair = SyncPair(
+           source=Path("/home/user/photos"),
+           destination="/backup/photos",
+           sync_mode=SyncMode.TWO_WAY,
+           storage_id=0
+       )
+
+       # First sync: Upload to cloud, make source authoritative
+       stats = engine.sync_pair(
+           pair,
+           initial_sync_preference=InitialSyncPreference.SOURCE_WINS
+       )
+       # Result: Uploads all local files, deletes cloud-only files
+
+       print(f"Initial backup complete!")
+       print(f"  Uploaded: {stats['uploads']} files")
+       print(f"  Deleted remote: {stats['deletes_remote']} files")
+
+   def merge_directories():
+       """Merge local and cloud files without losing anything."""
+
+       # Create sync engine
+       engine = SyncEngine(
+           client=cloud_client,
+           entries_manager_factory=create_entries_manager
+       )
+
+       # Create sync pair
+       pair = SyncPair(
+           source=Path("/home/user/projects"),
+           destination="/cloud/projects",
+           sync_mode=SyncMode.TWO_WAY,
+           storage_id=0
+       )
+
+       # First sync: Merge both sides (MERGE is default if omitted)
+       stats = engine.sync_pair(
+           pair,
+           initial_sync_preference=InitialSyncPreference.MERGE  # or omit
+       )
+       # Result: Downloads cloud files, uploads local files, NO deletions
+
+       print(f"Directory merge complete!")
+       print(f"  Uploaded: {stats['uploads']} files")
+       print(f"  Downloaded: {stats['downloads']} files")
+       print(f"  Deletions: {stats['deletes_local'] + stats['deletes_remote']}")
+       # Deletions will be 0 for MERGE mode
+
+   if __name__ == "__main__":
+       # Example 1: Restore from cloud vault
+       vault_restoration()
+
+       # Example 2: First backup to cloud
+       first_time_backup()
+
+       # Example 3: Merge without losing files
+       merge_directories()
 
 Advanced Examples
 -----------------

@@ -109,6 +109,120 @@ Best Practices
 * Monitor for conflicts and have a resolution plan
 * Consider using ignore patterns for temporary files
 
+Initial Sync Behavior
+~~~~~~~~~~~~~~~~~~~~~
+
+**Important**: The first time you sync with TWO_WAY mode (when no previous sync state exists), you must decide how to handle files that exist on only one side.
+
+The Problem
+^^^^^^^^^^^
+
+On first sync, the sync engine cannot distinguish between:
+
+* **"File was deleted locally"** (should delete from destination)
+* **"File was added remotely"** (should download to local)
+
+This ambiguity can lead to unexpected data loss if not handled carefully.
+
+Initial Sync Preferences
+^^^^^^^^^^^^^^^^^^^^^^^^^
+
+Use the ``initial_sync_preference`` parameter to control first-sync behavior:
+
+.. code-block:: python
+
+   from syncengine import SyncEngine, SyncMode, SyncPair, InitialSyncPreference
+
+   pair = SyncPair(
+       source=Path("/local/folder"),
+       destination="/cloud/folder",
+       sync_mode=SyncMode.TWO_WAY
+   )
+
+   # Option 1: MERGE (default - safest)
+   # Merges both sides without deletions
+   stats = engine.sync_pair(
+       pair,
+       initial_sync_preference=InitialSyncPreference.MERGE
+   )
+   # Result: Downloads destination files, uploads source files, NO deletions
+
+   # Option 2: SOURCE_WINS
+   # Source is authoritative, destination extras deleted
+   stats = engine.sync_pair(
+       pair,
+       initial_sync_preference=InitialSyncPreference.SOURCE_WINS
+   )
+   # Result: Uploads source files, DELETES destination-only files
+
+   # Option 3: DESTINATION_WINS
+   # Destination is authoritative, source extras deleted
+   stats = engine.sync_pair(
+       pair,
+       initial_sync_preference=InitialSyncPreference.DESTINATION_WINS
+   )
+   # Result: Downloads destination files, DELETES source-only files
+
+**Default Behavior**: If not specified, ``MERGE`` is used for safety (no data loss).
+
+Common Scenarios
+^^^^^^^^^^^^^^^^
+
+**Vault Restoration** (destination is master):
+
+.. code-block:: python
+
+   # Restore from cloud vault to empty local folder
+   stats = engine.sync_pair(
+       pair,
+       initial_sync_preference=InitialSyncPreference.DESTINATION_WINS
+   )
+   # Downloads all vault files to local
+
+**First-Time Backup** (source is master):
+
+.. code-block:: python
+
+   # First backup of local files to empty cloud
+   stats = engine.sync_pair(
+       pair,
+       initial_sync_preference=InitialSyncPreference.SOURCE_WINS
+   )
+   # Uploads all local files to cloud
+
+**Merging Two Directories**:
+
+.. code-block:: python
+
+   # Merge local and cloud files without losing anything
+   stats = engine.sync_pair(
+       pair,
+       initial_sync_preference=InitialSyncPreference.MERGE  # or omit (default)
+   )
+   # Downloads cloud files, uploads local files, NO deletions
+
+Risk Warnings
+^^^^^^^^^^^^^
+
+If you don't explicitly set a preference, the sync engine will detect risky patterns and warn you:
+
+.. code-block:: text
+
+   ⚠ WARNING: Destination has 100 files but source has only 5.
+     Initial TWO_WAY sync will default to MERGE mode (no deletions).
+     To make destination authoritative and delete source-only files:
+       initial_sync_preference=InitialSyncPreference.DESTINATION_WINS
+
+After First Sync
+^^^^^^^^^^^^^^^^
+
+After the first successful sync, normal TWO_WAY behavior applies:
+
+* New files on either side are copied to the other
+* Deletions on either side are propagated to the other
+* Modifications are synced bidirectionally
+* The ``initial_sync_preference`` parameter has no effect
+
 SOURCE_TO_DESTINATION Mode
 --------------------------
 

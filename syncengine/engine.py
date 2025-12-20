@@ -243,6 +243,8 @@ class SyncEngine:
             ... )
         """
         # Default to MERGE for safer initial sync behavior
+        # Track whether user explicitly set preference (for risk warnings)
+        user_set_preference = initial_sync_preference is not None
         if initial_sync_preference is None and pair.sync_mode == SyncMode.TWO_WAY:
             from .modes import InitialSyncPreference
 
@@ -283,6 +285,7 @@ class SyncEngine:
                 files_to_skip,
                 file_renames,
                 force_upload,
+                initial_sync_preference,
             )
         elif use_streaming and not dry_run and pair.sync_mode.requires_destination_scan:
             # Use streaming mode for other modes (not dry-run)
@@ -297,6 +300,7 @@ class SyncEngine:
                 sync_progress_tracker,
                 force_upload,
                 force_download,
+                initial_sync_preference,
             )
         else:
             # Use traditional mode (scan all files upfront)
@@ -312,6 +316,7 @@ class SyncEngine:
                 force_upload,
                 force_download,
                 initial_sync_preference,
+                user_set_preference,
             )
 
     def _sync_pair_traditional(
@@ -327,6 +332,7 @@ class SyncEngine:
         force_upload: bool = False,
         force_download: bool = False,
         initial_sync_preference: Optional["InitialSyncPreference"] = None,
+        user_set_preference: bool = True,
     ) -> dict:
         """Traditional sync: scan all files upfront, then process.
 
@@ -419,6 +425,11 @@ class SyncEngine:
         # Build dictionaries for comparison
         local_file_map = {f.relative_path: f for f in local_files}
         remote_file_map = {f.relative_path: f for f in remote_files}
+
+        # Check for risky initial sync patterns and warn user
+        self._check_initial_sync_risks(
+            pair, local_files, remote_files, is_initial_sync, user_set_preference
+        )
 
         # Validate state against current files (if state was loaded)
         if pair.sync_mode == SyncMode.TWO_WAY and state:
@@ -556,6 +567,7 @@ class SyncEngine:
         previous_local_tree = None
         previous_remote_tree = None
         state = None
+        is_initial_sync = False
 
         if pair.sync_mode == SyncMode.TWO_WAY:
             state = self.state_manager.load_state(
@@ -571,6 +583,10 @@ class SyncEngine:
                     f"local_tree: {state.source_tree.size}, "
                     f"remote_tree: {state.destination_tree.size}"
                 )
+            else:
+                # No previous state - this is initial sync
+                is_initial_sync = True
+                logger.debug("No previous sync state - this is an initial sync")
 
         # Step 1: Scan local files if needed
         local_files = self._scan_local_files_streaming(
@@ -663,6 +679,8 @@ class SyncEngine:
                 synced_remote_file_map=synced_remote_file_map,
                 force_upload=force_upload,
                 force_download=force_download,
+                is_initial_sync=is_initial_sync,
+                initial_sync_preference=initial_sync_preference,
             )
 
         # Step 3: Handle local-only files (files that don't exist remotely)
@@ -682,6 +700,8 @@ class SyncEngine:
                 synced_local_file_map=synced_local_file_map,
                 force_upload=force_upload,
                 force_download=force_download,
+                is_initial_sync=is_initial_sync,
+                initial_sync_preference=initial_sync_preference,
             )
 
         # Step 4: Save sync state after successful sync (for TWO_WAY mode)
@@ -1794,6 +1814,8 @@ class SyncEngine:
         synced_remote_file_map: Optional[dict[str, DestinationFile]] = None,
         force_upload: bool = False,
         force_download: bool = False,
+        is_initial_sync: bool = False,
+        initial_sync_preference: Optional["InitialSyncPreference"] = None,
     ) -> None:
         """Process remote files in batches for streaming sync.
 
@@ -1868,6 +1890,8 @@ class SyncEngine:
                     previous_remote_tree=previous_remote_tree,
                     force_upload=force_upload,
                     force_download=force_download,
+                    is_initial_sync=is_initial_sync,
+                    initial_sync_preference=initial_sync_preference,
                 )
 
                 # Update stats
@@ -1917,6 +1941,8 @@ class SyncEngine:
         previous_remote_tree=None,
         force_upload: bool = False,
         force_download: bool = False,
+        is_initial_sync: bool = False,
+        initial_sync_preference: Optional["InitialSyncPreference"] = None,
     ) -> tuple[dict, set[str], dict[str, SourceFile], dict[str, DestinationFile]]:
         """Process a single batch of remote entries.
 
@@ -1960,8 +1986,8 @@ class SyncEngine:
             previous_remote_tree,
             force_upload,
             force_download,
-            False,  # is_initial_sync - not fully supported in streaming mode yet
-            None,  # initial_sync_preference
+            is_initial_sync,
+            initial_sync_preference,
         )
         batch_decisions = []
 
@@ -2172,6 +2198,8 @@ class SyncEngine:
         synced_local_file_map: Optional[dict[str, SourceFile]] = None,
         force_upload: bool = False,
         force_download: bool = False,
+        is_initial_sync: bool = False,
+        initial_sync_preference: Optional["InitialSyncPreference"] = None,
     ) -> None:
         """Process local-only files for streaming sync.
 
@@ -2208,8 +2236,8 @@ class SyncEngine:
             None,
             force_upload,
             force_download,
-            False,  # is_initial_sync - not fully supported in streaming mode yet
-            None,  # initial_sync_preference
+            is_initial_sync,
+            initial_sync_preference,
         )
         local_decisions = []
 
@@ -2425,6 +2453,76 @@ class SyncEngine:
                 updated_decisions.append(decision)
 
         return updated_decisions
+
+    def _check_initial_sync_risks(
+        self,
+        pair: SyncPair,
+        local_files: list,
+        remote_files: list,
+        is_initial_sync: bool,
+        user_set_preference: bool,
+    ) -> None:
+        """Check for risky initial sync patterns and warn user.
+
+        Args:
+            pair: Sync pair configuration
+            local_files: List of local files
+            remote_files: List of remote files
+            is_initial_sync: Whether this is the first sync (no previous state)
+            user_set_preference: Whether user explicitly set initial_sync_preference
+        """
+        # Only check for TWO_WAY mode on initial sync
+        if pair.sync_mode != SyncMode.TWO_WAY or not is_initial_sync:
+            return
+
+        # Skip if user explicitly set a preference (they know what they want)
+        if user_set_preference:
+            return
+
+        # Skip if output is quiet
+        if self.output.quiet:
+            return
+
+        source_count = len(local_files)
+        dest_count = len(remote_files)
+
+        # Detect risky patterns
+
+        # Pattern 1: Many more files on destination than source
+        if dest_count > source_count * 2 and dest_count > 10:
+            self.output.warning("")
+            self.output.warning(
+                f"⚠ WARNING: Destination has {dest_count} files but source has only "
+                f"{source_count}."
+            )
+            self.output.warning(
+                "  Initial TWO_WAY sync will default to MERGE mode (no deletions)."
+            )
+            self.output.warning(
+                "  To make destination authoritative and delete source-only files:"
+            )
+            self.output.warning(
+                "    initial_sync_preference=InitialSyncPreference.DESTINATION_WINS"
+            )
+            self.output.warning("")
+
+        # Pattern 2: Many more files on source than destination
+        elif source_count > dest_count * 2 and source_count > 10:
+            self.output.warning("")
+            self.output.warning(
+                f"⚠ WARNING: Source has {source_count} files but destination has only "
+                f"{dest_count}."
+            )
+            self.output.warning(
+                "  Initial TWO_WAY sync will default to MERGE mode (no deletions)."
+            )
+            self.output.warning(
+                "  To make source authoritative and delete destination-only files:"
+            )
+            self.output.warning(
+                "    initial_sync_preference=InitialSyncPreference.SOURCE_WINS"
+            )
+            self.output.warning("")
 
     def _execute_decisions(
         self,
