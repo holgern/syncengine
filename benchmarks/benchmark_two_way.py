@@ -24,7 +24,7 @@ from benchmarks.test_utils import (
     modify_file_with_timestamp,
 )
 from syncengine.engine import SyncEngine
-from syncengine.modes import SyncMode
+from syncengine.modes import InitialSyncPreference, SyncMode
 from syncengine.pair import SyncPair
 from syncengine.protocols import DefaultOutputHandler
 
@@ -336,6 +336,164 @@ def benchmark_two_way():
             ), f"Expected 1 remote delete, got {stats['deletes_remote']}"
             print("[✓] External deletion correctly propagated to destination")
 
+        # Scenario 12: Initial Sync with MERGE (default)
+        print("\n" + "-" * 80)
+        print("SCENARIO 12: Initial sync with MERGE preference (default)")
+        print("-" * 80)
+        # Create fresh directories
+        merge_source = base_dir / "merge_source"
+        merge_dest = base_dir / "merge_dest"
+        merge_source.mkdir()
+        merge_dest.mkdir()
+
+        # Source has some files
+        print("[INFO] Creating 3 source files...")
+        for i in range(3):
+            f = merge_source / f"source_file_{i}.txt"
+            f.write_text(f"Source content {i}\n" + os.urandom(1024).hex())
+
+        # Destination has different files
+        print("[INFO] Creating 3 destination files...")
+        for i in range(3):
+            f = merge_dest / f"dest_file_{i}.txt"
+            f.write_text(f"Dest content {i}\n" + os.urandom(1024).hex())
+
+        # Create new client for merge_dest
+        merge_client = LocalStorageClient(merge_dest)
+        merge_factory = create_entries_manager_factory(merge_client)
+        merge_engine = SyncEngine(merge_client, merge_factory, output=output)
+
+        merge_pair = SyncPair(
+            source=merge_source,
+            destination="",
+            sync_mode=SyncMode.TWO_WAY,
+        )
+
+        print("[INFO] Source has 3 files, destination has 3 different files")
+        print("\n[SYNC] First sync with MERGE (default - no deletions)...")
+        start = time.time()
+        stats = merge_engine.sync_pair(merge_pair)  # MERGE is default
+        elapsed = time.time() - start
+
+        print(f"[STATS] {stats}")
+        print(f"[TIME] Sync completed in {elapsed:.3f}s")
+        assert stats["uploads"] == 3, f"Expected 3 uploads, got {stats['uploads']}"
+        assert (
+            stats["downloads"] == 3
+        ), f"Expected 3 downloads, got {stats['downloads']}"
+        assert stats["deletes_local"] == 0, "MERGE should not delete local files"
+        assert stats["deletes_remote"] == 0, "MERGE should not delete remote files"
+        assert count_files(merge_source) == 6, "Source should have all 6 files"
+        assert count_files(merge_dest) == 6, "Destination should have all 6 files"
+        print("[✓] MERGE preference: both sides merged, no deletions")
+
+        # Scenario 13: Initial Sync with SOURCE_WINS
+        print("\n" + "-" * 80)
+        print("SCENARIO 13: Initial sync with SOURCE_WINS (source authoritative)")
+        print("-" * 80)
+        # Create fresh directories
+        source_wins_src = base_dir / "source_wins_src"
+        source_wins_dst = base_dir / "source_wins_dst"
+        source_wins_src.mkdir()
+        source_wins_dst.mkdir()
+
+        print("[INFO] Creating 3 source files...")
+        for i in range(3):
+            f = source_wins_src / f"source_file_{i}.txt"
+            f.write_text(f"Source content {i}\n" + os.urandom(1024).hex())
+
+        print("[INFO] Creating 3 destination files...")
+        for i in range(3):
+            f = source_wins_dst / f"dest_file_{i}.txt"
+            f.write_text(f"Dest content {i}\n" + os.urandom(1024).hex())
+
+        sw_client = LocalStorageClient(source_wins_dst)
+        sw_factory = create_entries_manager_factory(sw_client)
+        sw_engine = SyncEngine(sw_client, sw_factory, output=output)
+
+        sw_pair = SyncPair(
+            source=source_wins_src,
+            destination="",
+            sync_mode=SyncMode.TWO_WAY,
+        )
+
+        print("[INFO] Source has 3 files, destination has 3 different files")
+        print("\n[SYNC] First sync with SOURCE_WINS (source authoritative)...")
+        start = time.time()
+        stats = sw_engine.sync_pair(
+            sw_pair, initial_sync_preference=InitialSyncPreference.SOURCE_WINS
+        )
+        elapsed = time.time() - start
+
+        print(f"[STATS] {stats}")
+        print(f"[TIME] Sync completed in {elapsed:.3f}s")
+        assert stats["uploads"] == 3, f"Expected 3 uploads, got {stats['uploads']}"
+        assert (
+            stats["deletes_remote"] == 3
+        ), f"Expected 3 remote deletes, got {stats['deletes_remote']}"
+        assert count_files(source_wins_src) == 3, "Source should keep 3 files"
+        assert (
+            count_files(source_wins_dst) == 3
+        ), "Destination should match source (3 files)"
+        print("[✓] SOURCE_WINS: destination now matches source exactly")
+
+        # Scenario 14: Initial Sync with DESTINATION_WINS
+        print("\n" + "-" * 80)
+        print(
+            "SCENARIO 14: Initial sync with DESTINATION_WINS "
+            "(destination authoritative)"
+        )
+        print("-" * 80)
+        # Create fresh directories
+        dest_wins_src = base_dir / "dest_wins_src"
+        dest_wins_dst = base_dir / "dest_wins_dst"
+        dest_wins_src.mkdir()
+        dest_wins_dst.mkdir()
+
+        print("[INFO] Creating 3 source files...")
+        for i in range(3):
+            f = dest_wins_src / f"source_file_{i}.txt"
+            f.write_text(f"Source content {i}\n" + os.urandom(1024).hex())
+
+        print("[INFO] Creating 3 destination files...")
+        for i in range(3):
+            f = dest_wins_dst / f"dest_file_{i}.txt"
+            f.write_text(f"Dest content {i}\n" + os.urandom(1024).hex())
+
+        dw_client = LocalStorageClient(dest_wins_dst)
+        dw_factory = create_entries_manager_factory(dw_client)
+        dw_engine = SyncEngine(dw_client, dw_factory, output=output)
+
+        dw_pair = SyncPair(
+            source=dest_wins_src,
+            destination="",
+            sync_mode=SyncMode.TWO_WAY,
+        )
+
+        print("[INFO] Source has 3 files, destination has 3 different files")
+        print(
+            "\n[SYNC] First sync with DESTINATION_WINS (destination authoritative)..."
+        )
+        start = time.time()
+        stats = dw_engine.sync_pair(
+            dw_pair, initial_sync_preference=InitialSyncPreference.DESTINATION_WINS
+        )
+        elapsed = time.time() - start
+
+        print(f"[STATS] {stats}")
+        print(f"[TIME] Sync completed in {elapsed:.3f}s")
+        assert (
+            stats["downloads"] == 3
+        ), f"Expected 3 downloads, got {stats['downloads']}"
+        assert (
+            stats["deletes_local"] == 3
+        ), f"Expected 3 local deletes, got {stats['deletes_local']}"
+        assert (
+            count_files(dest_wins_src) == 3
+        ), "Source should match destination (3 files)"
+        assert count_files(dest_wins_dst) == 3, "Destination should keep 3 files"
+        print("[✓] DESTINATION_WINS: source now matches destination exactly")
+
         # Final verification
         print("\n" + "-" * 80)
         print("FINAL VERIFICATION")
@@ -349,12 +507,13 @@ def benchmark_two_way():
 
         print("\n" + "=" * 80)
         print("[SUCCESS] TWO_WAY mode benchmark completed successfully!")
-        print("All new state invalidation features demonstrated:")
+        print("All features demonstrated:")
         print("  ✓ Size change detection")
         print("  ✓ Content change detection (hash comparison)")
         print("  ✓ State isolation by storage_id")
         print("  ✓ Multiple deletion detection")
         print("  ✓ External state invalidation handling")
+        print("  ✓ Initial sync preferences (MERGE, SOURCE_WINS, DESTINATION_WINS)")
         print("=" * 80)
 
 

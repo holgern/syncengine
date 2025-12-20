@@ -41,6 +41,13 @@ Mirror every action in both directions. Changes from source are uploaded to dest
 and changes from destination are downloaded to source. Both deletions and additions are
 synchronized bidirectionally.
 
+**Initial Sync Preferences**: The TWO_WAY benchmark also demonstrates the three initial
+sync preferences for first-time sync scenarios:
+
+- **MERGE** (default): Merges both sides without deletions - safest option
+- **SOURCE_WINS**: Treats source as authoritative, deletes destination-only files
+- **DESTINATION_WINS**: Treats destination as authoritative, deletes source-only files
+
 ### 2. SOURCE_TO_DESTINATION
 
 Mirror source actions to destination, including deletions. Destination changes are
