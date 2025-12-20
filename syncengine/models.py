@@ -63,12 +63,16 @@ class SyncConfig:
         local_trash_dir_name: Name of local trash directory
         state_dir_name: Name of state directory under ~/.config/
         app_name: Application name (used in paths and logging)
+        verify_operations: If True, rescan files after sync to verify uploads/downloads
+                          succeeded. This is slower but catches failed operations.
+                          (default: True for safety)
     """
 
     ignore_file_name: str = ".syncignore"
     local_trash_dir_name: str = ".syncengine.trash.source"
     state_dir_name: str = "syncengine"
     app_name: str = "syncengine"
+    verify_operations: bool = True
 
     def __post_init__(self) -> None:
         """Validate configuration."""

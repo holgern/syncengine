@@ -21,7 +21,7 @@ from .constants import (
     FUTURE_RESULT_TIMEOUT,
     format_size,
 )
-from .models import FileEntry
+from .models import FileEntry, SyncConfig
 from .modes import SyncMode
 from .operations import SyncOperations
 from .pair import SyncPair
@@ -88,6 +88,7 @@ class SyncEngine:
         concurrency_limits: Optional[ConcurrencyLimits] = None,
         spinner_factory: Optional[SpinnerFactoryProtocol] = None,
         progress_bar_factory: Optional[ProgressBarFactoryProtocol] = None,
+        config: Optional[SyncConfig] = None,
     ):
         """Initialize sync engine.
 
@@ -108,6 +109,8 @@ class SyncEngine:
                 If None, NullSpinnerFactory is used (no spinners).
             progress_bar_factory: Factory for creating progress bars.
                 If None, NullProgressBarFactory is used (no progress bars).
+            config: Optional configuration for sync behavior.
+                If None, default SyncConfig is used.
         """
         self.client = client
         self.entries_manager_factory = entries_manager_factory
@@ -118,6 +121,7 @@ class SyncEngine:
         self.concurrency_limits = concurrency_limits or ConcurrencyLimits()
         self.spinner_factory = spinner_factory or NullSpinnerFactory()
         self.progress_bar_factory = progress_bar_factory or NullProgressBarFactory()
+        self.config = config or SyncConfig()
 
     def pause(self) -> None:
         """Pause sync operations.
@@ -319,7 +323,7 @@ class SyncEngine:
                 user_set_preference,
             )
 
-    def _sync_pair_traditional(
+    def _sync_pair_traditional(  # noqa: C901
         self,
         pair: SyncPair,
         dry_run: bool,
@@ -480,41 +484,148 @@ class SyncEngine:
                 # locations. This includes: files that already existed, newly
                 # uploaded, newly downloaded.
                 # But excludes: deleted files (both local and remote deletions)
-                current_synced_files: set[str] = set()
-                for decision in decisions:
-                    if decision.action == SyncAction.SKIP:
-                        # Files that were already in sync
-                        current_synced_files.add(decision.relative_path)
-                    elif decision.action == SyncAction.UPLOAD:
-                        # Files uploaded to remote (now exist in both)
-                        current_synced_files.add(decision.relative_path)
-                    elif decision.action == SyncAction.DOWNLOAD:
-                        # Files downloaded to local (now exist in both)
-                        current_synced_files.add(decision.relative_path)
-                    # DELETE_SOURCE/DELETE_DESTINATION are NOT added (no longer exist)
+                # and FAILED operations (uploads/downloads that threw exceptions)
 
-                # Build full tree state for v2 format
-                # IMPORTANT: We need to rescan local files AFTER downloads to capture
-                # newly downloaded files in the source_tree. The original local_files
-                # was scanned before downloads, so it won't include downloaded files.
-                scanner = DirectoryScanner(
-                    ignore_patterns=pair.ignore,
-                    exclude_dot_files=pair.exclude_dot_files,
-                )
-                local_files_after_sync = scanner.scan_source(pair.source)
+                if self.config.verify_operations:
+                    # SAFE MODE: Rescan and verify that operations actually
+                    # succeeded
+                    # Build full tree state for v2 format
+                    # IMPORTANT: We need to rescan local files AFTER downloads
+                    # to capture newly downloaded files in the source_tree.
+                    # The original local_files was scanned before downloads,
+                    # so it won't include downloaded files.
+                    scanner = DirectoryScanner(
+                        ignore_patterns=pair.ignore,
+                        exclude_dot_files=pair.exclude_dot_files,
+                    )
+                    local_files_after_sync = scanner.scan_source(pair.source)
 
-                # Filter to only include files that are now synced
-                synced_local_files = [
-                    f
-                    for f in local_files_after_sync
-                    if f.relative_path in current_synced_files
-                ]
-                synced_remote_files = [
-                    f for f in remote_files if f.relative_path in current_synced_files
-                ]
+                    # Similarly, rescan remote files AFTER uploads to verify
+                    # they succeeded. This allows us to detect failed uploads.
+                    remote_files_after_sync = self._scan_remote(pair)
 
-                local_tree = build_source_tree_from_files(synced_local_files)
-                remote_tree = build_destination_tree_from_files(synced_remote_files)
+                    # Build maps for quick lookup
+                    local_file_map_after_sync = {
+                        f.relative_path: f for f in local_files_after_sync
+                    }
+                    remote_file_map_after_sync = {
+                        f.relative_path: f for f in remote_files_after_sync
+                    }
+
+                    # Determine which files are actually synced by verifying they exist
+                    # in both locations after sync operations
+                    current_synced_files: set[str] = set()
+                    synced_local_files = []
+                    synced_remote_files = []
+
+                    for decision in decisions:
+                        if decision.action == SyncAction.SKIP:
+                            # Files that were already in sync
+                            current_synced_files.add(decision.relative_path)
+                            if decision.relative_path in local_file_map_after_sync:
+                                synced_local_files.append(
+                                    local_file_map_after_sync[decision.relative_path]
+                                )
+                            if decision.relative_path in remote_file_map_after_sync:
+                                synced_remote_files.append(
+                                    remote_file_map_after_sync[decision.relative_path]
+                                )
+                        elif decision.action == SyncAction.UPLOAD:
+                            # Files uploaded to remote - verify both local
+                            # and remote files exist
+                            local_exists = (
+                                decision.relative_path in local_file_map_after_sync
+                            )
+                            remote_exists = (
+                                decision.relative_path in remote_file_map_after_sync
+                            )
+
+                            if local_exists and remote_exists:
+                                # Upload succeeded - file exists on both sides
+                                current_synced_files.add(decision.relative_path)
+                                synced_local_files.append(
+                                    local_file_map_after_sync[decision.relative_path]
+                                )
+                                synced_remote_files.append(
+                                    remote_file_map_after_sync[decision.relative_path]
+                                )
+                            elif local_exists:
+                                # Upload failed but local file still exists
+                                # Add to local tree but NOT to synced files
+                                # or remote tree
+                                synced_local_files.append(
+                                    local_file_map_after_sync[decision.relative_path]
+                                )
+                                logger.warning(
+                                    f"Upload of {decision.relative_path} failed "
+                                    f"(local_exists={local_exists}, "
+                                    f"remote_exists={remote_exists}) "
+                                    "- will retry on next sync"
+                                )
+                            else:
+                                # Both missing - something is very wrong
+                                logger.warning(
+                                    f"Upload of {decision.relative_path} failed "
+                                    f"(local_exists={local_exists}, "
+                                    f"remote_exists={remote_exists}) "
+                                    "- local file also missing"
+                                )
+                        elif decision.action == SyncAction.DOWNLOAD:
+                            # Files downloaded to local - verify both local
+                            # and remote files exist
+                            local_exists = (
+                                decision.relative_path in local_file_map_after_sync
+                            )
+                            remote_exists = (
+                                decision.relative_path in remote_file_map_after_sync
+                            )
+
+                            if local_exists and remote_exists:
+                                # Download succeeded - file exists on both sides
+                                current_synced_files.add(decision.relative_path)
+                                synced_local_files.append(
+                                    local_file_map_after_sync[decision.relative_path]
+                                )
+                                synced_remote_files.append(
+                                    remote_file_map_after_sync[decision.relative_path]
+                                )
+                            elif remote_exists:
+                                # Download failed but remote file still exists
+                                # Add to remote tree but NOT to synced files
+                                # or local tree
+                                synced_remote_files.append(
+                                    remote_file_map_after_sync[decision.relative_path]
+                                )
+                                logger.warning(
+                                    f"Download of {decision.relative_path} "
+                                    f"failed (local_exists={local_exists}, "
+                                    f"remote_exists={remote_exists}) "
+                                    "- will retry on next sync"
+                                )
+                            else:
+                                # Both missing - something is very wrong
+                                logger.warning(
+                                    f"Download of {decision.relative_path} "
+                                    f"failed (local_exists={local_exists}, "
+                                    f"remote_exists={remote_exists}) "
+                                    "- remote file also missing"
+                                )
+                        # DELETE_SOURCE/DELETE_DESTINATION are NOT added
+                        # (no longer exist)
+
+                    local_tree = build_source_tree_from_files(synced_local_files)
+                    remote_tree = build_destination_tree_from_files(synced_remote_files)
+                else:
+                    # FAST MODE: Assume operations succeeded without verification
+                    # This is the old behavior - faster but less safe
+                    current_synced_files = {
+                        decision.relative_path
+                        for decision in decisions
+                        if decision.action
+                        in (SyncAction.SKIP, SyncAction.UPLOAD, SyncAction.DOWNLOAD)
+                    }
+                    local_tree = build_source_tree_from_files(local_files)
+                    remote_tree = build_destination_tree_from_files(remote_files)
 
                 self.state_manager.save_state(
                     pair.source,
@@ -717,6 +828,14 @@ class SyncEngine:
 
         # Step 4: Save sync state after successful sync (for TWO_WAY mode)
         if pair.sync_mode == SyncMode.TWO_WAY:
+            # If uploads happened, rescan remote to get uploaded file metadata
+            # This is needed to populate destination_tree for verification
+            if stats["uploads"] > 0 and synced_remote_file_map is not None:
+                remote_files_after = self._scan_remote(pair)
+                for remote_file in remote_files_after:
+                    if remote_file.relative_path in synced_files:
+                        synced_remote_file_map[remote_file.relative_path] = remote_file
+
             # Build full tree state from tracked file objects
             local_tree = build_source_tree_from_files(
                 list(synced_local_file_map.values())
@@ -2044,22 +2163,34 @@ class SyncEngine:
                         decision.relative_path
                     ]
             elif decision.action == SyncAction.UPLOAD:
-                # Files uploaded to remote (now exist in both)
-                synced_in_batch.add(decision.relative_path)
+                # Files uploaded to remote - verify both local and remote files exist
+                # Note: In streaming mode, we don't have the remote file object yet
+                # since it was just uploaded. We can verify local exists, but remote
+                # verification would require an additional API call.
+                # For now, we verify local exists and trust the upload succeeded.
                 if decision.source_file:
+                    synced_in_batch.add(decision.relative_path)
                     synced_local_in_batch[decision.relative_path] = decision.source_file
-                # Note: remote file doesn't exist yet in this batch context
+                    # Note: We don't have the remote file in this batch yet
+                    # Remote verification would require rescanning, which is expensive
+                    # The uploaded file will be detected in the next batch/sync
+                else:
+                    logger.warning(
+                        f"Upload of {decision.relative_path} failed "
+                        "(source file missing) - will retry on next sync"
+                    )
             elif decision.action == SyncAction.DOWNLOAD:
-                # Files downloaded to local (now exist in both)
-                synced_in_batch.add(decision.relative_path)
-                if decision.relative_path in remote_file_map:
-                    synced_remote_in_batch[decision.relative_path] = remote_file_map[
-                        decision.relative_path
-                    ]
+                # Files downloaded to local - verify download succeeded
                 # For downloaded files, we need to create/update SourceFile object
                 # to reflect the actual downloaded file state
                 local_path = pair.source / decision.relative_path
                 if local_path.exists():
+                    # Download succeeded - file exists locally
+                    synced_in_batch.add(decision.relative_path)
+                    if decision.relative_path in remote_file_map:
+                        synced_remote_in_batch[decision.relative_path] = (
+                            remote_file_map[decision.relative_path]
+                        )
                     # Create SourceFile object for downloaded file (new or updated)
                     downloaded_file = SourceFile(
                         path=local_path,
@@ -2069,6 +2200,12 @@ class SyncEngine:
                         file_id=local_path.stat().st_ino,
                     )
                     synced_local_in_batch[decision.relative_path] = downloaded_file
+                else:
+                    # Download failed - file missing locally
+                    logger.warning(
+                        f"Download of {decision.relative_path} failed "
+                        "(file does not exist locally) - will retry on next sync"
+                    )
             # DELETE_SOURCE and DELETE_DESTINATION are NOT added (they no longer exist)
 
         # Debug: print when batch is complete
@@ -2295,10 +2432,14 @@ class SyncEngine:
             stats["uploads"] += local_stats["uploads"]
             stats["deletes_local"] += local_stats["deletes_local"]
 
-            # Track synced files (uploaded files)
+            # Track synced files (only files that actually succeeded)
             if synced_files is not None:
+                successful_paths = local_stats.get("successful_paths", set())
                 for decision in local_decisions:
-                    if decision.action == SyncAction.UPLOAD:
+                    if (
+                        decision.action == SyncAction.UPLOAD
+                        and decision.relative_path in successful_paths
+                    ):
                         synced_files.add(decision.relative_path)
                         if synced_local_file_map is not None and decision.source_file:
                             synced_local_file_map[decision.relative_path] = (
@@ -2306,6 +2447,9 @@ class SyncEngine:
                             )
         else:
             for decision in local_decisions:
+                # Track stats before execution
+                uploads_before = stats.get("uploads", 0)
+
                 self._execute_decision_with_stats(
                     decision=decision,
                     pair=pair,
@@ -2314,13 +2458,17 @@ class SyncEngine:
                     progress_callback=progress_callback,
                     stats=stats,
                 )
-                # Track synced files (uploaded files)
+
+                # Track synced files (only if operation succeeded)
                 if synced_files is not None and decision.action == SyncAction.UPLOAD:
-                    synced_files.add(decision.relative_path)
-                    if synced_local_file_map is not None and decision.source_file:
-                        synced_local_file_map[decision.relative_path] = (
-                            decision.source_file
-                        )
+                    # Check if upload succeeded by seeing if stats were incremented
+                    uploads_after = stats.get("uploads", 0)
+                    if uploads_after > uploads_before:
+                        synced_files.add(decision.relative_path)
+                        if synced_local_file_map is not None and decision.source_file:
+                            synced_local_file_map[decision.relative_path] = (
+                                decision.source_file
+                            )
 
     def _scan_remote(self, pair: SyncPair) -> list[DestinationFile]:
         """Scan remote directory for files.
@@ -3279,7 +3427,8 @@ class SyncEngine:
             start_delay: Delay in seconds between starting each parallel operation
 
         Returns:
-            Dictionary with stats of successful operations
+            Dictionary with stats of successful operations (includes
+            'successful_paths' key)
         """
         logger.debug(f"Executing {len(decisions)} actions with {max_workers} workers")
         if start_delay > 0:
@@ -3295,6 +3444,7 @@ class SyncEngine:
             "deletes_remote": 0,
             "renames_local": 0,
             "renames_remote": 0,
+            "successful_paths": set(),  # Track which files succeeded
         }
 
         def execute_with_semaphore(
@@ -3362,6 +3512,9 @@ class SyncEngine:
                     try:
                         path, elapsed, success, action = future.result(timeout=0)
                         if success:
+                            # Track successful file paths
+                            stats["successful_paths"].add(path)
+
                             # Update stats for successful operations
                             if action == SyncAction.UPLOAD:
                                 stats["uploads"] += 1
