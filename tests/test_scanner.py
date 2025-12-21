@@ -194,6 +194,56 @@ class TestDestinationFile:
         # Should return None for invalid timestamp
         assert dest.mtime is None
 
+    def test_get_download_identifier_returns_hash(self):
+        """Test get_download_identifier returns hash by default."""
+        entry = FileEntry(
+            id=112450,
+            type="file",
+            name="test.bin",
+            file_size=1024,
+            hash="MTEyNDUwfHBhZA",  # Base64-encoded identifier
+            updated_at="2024-01-01T00:00:00Z",
+        )
+
+        dest = DestinationFile(entry=entry, relative_path="test.bin")
+
+        # Should return hash, not id
+        assert dest.get_download_identifier() == "MTEyNDUwfHBhZA"
+        assert dest.get_download_identifier() != "112450"
+        assert dest.get_download_identifier() != str(dest.id)
+
+    def test_get_download_identifier_with_different_hash_formats(self):
+        """Test get_download_identifier with various hash formats."""
+        # Test with MD5 hash format
+        entry_md5 = FileEntry(
+            id=1,
+            type="file",
+            name="file1.txt",
+            hash="5d41402abc4b2a76b9719d911017c592",  # MD5 hash
+        )
+        dest_md5 = DestinationFile(entry=entry_md5, relative_path="file1.txt")
+        assert dest_md5.get_download_identifier() == "5d41402abc4b2a76b9719d911017c592"
+
+        # Test with opaque identifier (Google Drive style)
+        entry_opaque = FileEntry(
+            id=2,
+            type="file",
+            name="file2.txt",
+            hash="1A2B3C4D5E6F7G8H",  # Opaque file ID
+        )
+        dest_opaque = DestinationFile(entry=entry_opaque, relative_path="file2.txt")
+        assert dest_opaque.get_download_identifier() == "1A2B3C4D5E6F7G8H"
+
+        # Test with empty hash
+        entry_empty = FileEntry(
+            id=3,
+            type="file",
+            name="file3.txt",
+            hash="",  # Empty hash
+        )
+        dest_empty = DestinationFile(entry=entry_empty, relative_path="file3.txt")
+        assert dest_empty.get_download_identifier() == ""
+
 
 class TestDirectoryScanner:
     """Test DirectoryScanner."""

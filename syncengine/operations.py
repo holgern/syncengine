@@ -189,7 +189,7 @@ class SyncOperations:
         local_path.parent.mkdir(parents=True, exist_ok=True)
 
         return self.client.download_file(
-            file_id=str(destination_file.id),
+            file_id=destination_file.get_download_identifier(),
             output_path=local_path,
             progress_callback=progress_callback,
         )

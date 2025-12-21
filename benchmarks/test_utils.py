@@ -137,23 +137,42 @@ class LocalStorageClient:
         """Download a file from simulated cloud storage.
 
         Args:
-            file_id: File entry ID (as string) to download
+            file_id: File identifier to download. This should be the hash
+                from FileEntry.hash, which is the MD5 hash of the file content.
             output_path: Local path where file should be saved
             progress_callback: Progress callback
 
         Returns:
             Path where file was saved
         """
-        # Find file by ID in the ID map
-        entry_id = int(file_id)
+        # Try to find file by hash first (new behavior)
         file_path = None
-        for path, eid in self._id_map.items():
-            if eid == entry_id:
-                file_path = self.storage_root / path
-                break
+        for path, _ in self._id_map.items():
+            candidate_path = self.storage_root / path
+            if candidate_path.exists() and candidate_path.is_file():
+                # Compute hash of this file
+                with open(candidate_path, "rb") as f:
+                    file_hash = hashlib.md5(f.read()).hexdigest()
+                if file_hash == file_id:
+                    file_path = candidate_path
+                    break
+
+        # Fall back to ID-based lookup for backward compatibility
+        if file_path is None:
+            try:
+                entry_id = int(file_id)
+                for path, eid in self._id_map.items():
+                    if eid == entry_id:
+                        file_path = self.storage_root / path
+                        break
+            except ValueError:
+                # file_id is not an integer, hash lookup failed above
+                pass
 
         if not file_path or not file_path.exists() or not file_path.is_file():
-            raise FileNotFoundError(f"No file with ID {file_id} found in storage")
+            raise FileNotFoundError(
+                f"No file with identifier {file_id} found in storage"
+            )
 
         output_path.parent.mkdir(parents=True, exist_ok=True)
         shutil.copy2(file_path, output_path)
@@ -297,6 +316,52 @@ class LocalStorageClient:
         return {"status": "error", "message": "Entry not found"}
 
 
+class NoHashNoMtimeFileEntry(LocalFileEntry):
+    """File entry for cloud storage without hash or mtime support.
+
+    This simulates encrypted vaults or cloud services that:
+    - Don't provide content hash (files are encrypted)
+    - Don't preserve original file mtime (only upload timestamp available)
+
+    This is the scenario where SIZE_ONLY comparison mode is needed.
+    """
+
+    @property
+    def hash(self) -> str:
+        """Content hash - always empty (not available for encrypted storage)."""
+        return ""
+
+    @property
+    def updated_at(self) -> Optional[str]:
+        """ISO timestamp - returns current time (upload time, not file mtime)."""
+        # Simulate cloud storage that only tracks upload time, not original file mtime
+        # This makes mtime unreliable for comparison
+        return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime(time.time()))
+
+
+class NoHashNoMtimeStorageClient(LocalStorageClient):
+    """Storage client simulating cloud without hash or mtime support.
+
+    This client simulates encrypted vaults or cloud storage services where:
+    - Files are encrypted, so content hash is unavailable
+    - Only upload timestamp is tracked, not original file mtime
+
+    Use this for testing SIZE_ONLY comparison mode, which is designed
+    specifically for this scenario.
+    """
+
+    def __init__(self, storage_root: Path):
+        """Initialize the no-hash/no-mtime storage client.
+
+        Args:
+            storage_root: Root directory that simulates cloud storage
+        """
+        super().__init__(storage_root)
+        print("[INFO] Using NoHashNoMtimeStorageClient (simulates encrypted vault)")
+        print("       - No content hash available (encrypted)")
+        print("       - No original mtime (upload time only)")
+
+
 class LocalEntriesManager:
     """Manager for file entries in local storage (simulating cloud)."""
 
@@ -323,7 +388,13 @@ class LocalEntriesManager:
         """
         folder_path = self.client.storage_root / name
         if folder_path.exists() and folder_path.is_dir():
-            return LocalFileEntry(folder_path, name, self.client._get_id(name))
+            # Use appropriate entry type based on client type
+            entry_class = (
+                NoHashNoMtimeFileEntry
+                if isinstance(self.client, NoHashNoMtimeStorageClient)
+                else LocalFileEntry
+            )
+            return entry_class(folder_path, name, self.client._get_id(name))
         return None
 
     def get_all_recursive(
@@ -350,10 +421,17 @@ class LocalEntriesManager:
         if not start_path.exists():
             return []
 
+        # Use appropriate entry type based on client type
+        entry_class = (
+            NoHashNoMtimeFileEntry
+            if isinstance(self.client, NoHashNoMtimeStorageClient)
+            else LocalFileEntry
+        )
+
         for file_path in start_path.rglob("*"):
             if file_path.is_file():
                 relative = str(file_path.relative_to(self.client.storage_root))
-                entry: FileEntryProtocol = LocalFileEntry(
+                entry: FileEntryProtocol = entry_class(
                     file_path, relative, self.client._get_id(relative)
                 )
                 results.append((entry, relative))

@@ -238,7 +238,7 @@ class TestSyncOperationsDownloadFile:
         assert local_path.parent.exists()
 
         mock_client.download_file.assert_called_once_with(
-            file_id="42",
+            file_id="abc123",
             output_path=local_path,
             progress_callback=progress_cb,
         )

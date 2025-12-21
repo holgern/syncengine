@@ -28,6 +28,12 @@ requiring actual cloud storage access.
 - **`benchmark_destination_backup.py`** - Tests DESTINATION_BACKUP mode (download only,
   no deletes)
 
+### Comparison Mode Benchmark
+
+- **`benchmark_comparison_modes.py`** - Tests all 5 comparison modes (HASH_THEN_MTIME,
+  SIZE_ONLY, SIZE_AND_MTIME, MTIME_ONLY, HASH_ONLY) with different storage client
+  scenarios
+
 ### Combined Benchmark
 
 - **`benchmark_sync_modes.py`** - Legacy script that runs all 5 modes together in one
@@ -70,6 +76,55 @@ Only download data from the destination. Never delete anything at source or act 
 source changes. Ideal for downloading backups where you want to preserve everything
 locally.
 
+## Comparison Modes
+
+The syncengine supports 5 different comparison modes that control how files are compared
+to determine if they match:
+
+### 1. HASH_THEN_MTIME (default)
+
+Compares file size first, then content hash (MD5) if available. Falls back to mtime
+comparison if hash is not available. This is the most reliable mode for regular cloud
+storage.
+
+**Best for**: Regular cloud storage with hash and mtime support
+
+### 2. SIZE_ONLY
+
+Only compares file size. Files with the same size are considered identical, regardless
+of content or modification time.
+
+**Best for**: Encrypted vaults or cloud storage without hash or mtime
+
+- Files are encrypted (no content hash available)
+- Only upload timestamp tracked (original mtime not preserved)
+
+**Example use case**: Encrypted cloud vaults where file content cannot be hashed
+
+### 3. SIZE_AND_MTIME
+
+Compares file size AND modification time. Both must match for files to be considered
+identical. Does not compute content hash.
+
+**Best for**: Fast sync where hash computation is too expensive
+
+### 4. MTIME_ONLY
+
+Only compares modification time. Files with the same mtime are considered identical,
+even if size differs.
+
+**Best for**: Specific use cases where mtime is the source of truth
+
+### 5. HASH_ONLY
+
+Only compares content hash. Files with the same hash are identical, even if size or
+mtime differ. Mtime is not used to determine which file is newer.
+
+**Best for**: Content-addressed storage or when mtime is unreliable
+
+**Note**: In TWO_WAY mode with different hashes, results in CONFLICT (cannot determine
+which file is newer without mtime)
+
 ## Usage
 
 ### Run All Benchmarks
@@ -84,6 +139,7 @@ python3 benchmarks/run_benchmarks.py
 python3 benchmarks/run_benchmarks.py -b two_way
 python3 benchmarks/run_benchmarks.py -b source_backup
 python3 benchmarks/run_benchmarks.py -b destination_to_source
+python3 benchmarks/run_benchmarks.py -b comparison_modes
 ```
 
 ### Run with Verbose Output
@@ -117,8 +173,14 @@ The `test_utils.py` module provides mock implementations that simulate cloud sto
 
 ### Classes
 
-- **`LocalFileEntry`**: Represents a file entry (simulates cloud file metadata)
-- **`LocalStorageClient`**: Mock cloud storage client using local filesystem
+- **`LocalFileEntry`**: Represents a file entry (simulates cloud file metadata with hash
+  and mtime)
+- **`NoHashNoMtimeFileEntry`**: File entry for encrypted storage (no hash, unreliable
+  mtime)
+- **`LocalStorageClient`**: Mock cloud storage client using local filesystem (with hash
+  and mtime)
+- **`NoHashNoMtimeStorageClient`**: Mock encrypted vault storage (no hash, no original
+  mtime)
 - **`LocalEntriesManager`**: Manager for file entries in mock storage
 
 ### Helper Functions

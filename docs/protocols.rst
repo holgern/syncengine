@@ -62,14 +62,24 @@ Download a file from storage:
 
    def download_file(
        self,
-       hash_value: str,
+       file_id: str,
        output_path: Path,
        progress_callback: Optional[Callable[[int, int], None]] = None
    ) -> Path:
        """Download a file from storage.
 
        Args:
-           hash_value: Content hash of the file
+           file_id: File identifier for download operations. This should be the
+               content-based identifier (typically from FileEntry.hash), which is
+               used by the storage API's download endpoint. This is the identifier
+               returned by DestinationFile.get_download_identifier(), which defaults
+               to the hash field. This is NOT the integer database ID from FileEntry.id.
+
+               Examples:
+               - Drime Cloud: Base64-encoded download identifier (e.g., "MTEyNDUwfHBhZA")
+               - Google Drive: Opaque file ID string (e.g., "1A2B3C4D5E6F7G8H")
+               - S3/generic: Content hash or object key
+
            output_path: Local path where file should be saved
            progress_callback: Called with (bytes_downloaded, total_bytes)
 
@@ -202,10 +212,16 @@ Required Properties
            """File size in bytes (0 for folders)."""
            ...
 
-       @property
-       def hash(self) -> str:
-           """Content hash (e.g., MD5, SHA256)."""
-           ...
+        @property
+        def hash(self) -> str:
+            """Content hash or download identifier.
+
+            This field should contain the identifier used for download operations.
+            Common formats include MD5/SHA hashes, opaque service IDs, or download tokens.
+            This value is used by DestinationFile.get_download_identifier() and passed
+            to StorageClientProtocol.download_file() as the file_id parameter.
+            """
+            ...
 
        @property
        def name(self) -> str:
@@ -238,9 +254,21 @@ Example Implementation
        def file_size(self) -> int:
            return self._data.get('size', 0)
 
-       @property
-       def hash(self) -> str:
-           return self._data.get('hash', '')
+        @property
+        def hash(self) -> str:
+            """Content hash or download identifier.
+
+            This field should contain the identifier used by your storage
+            service's download API. Common formats:
+            - MD5/SHA hash of file content
+            - Opaque file ID from the storage service
+            - Base64-encoded download token
+            - Object key or path identifier
+
+            This value is used by DestinationFile.get_download_identifier()
+            to determine what identifier to pass to download_file().
+            """
+            return self._data.get('hash', '')
 
        @property
        def name(self) -> str:
@@ -421,35 +449,36 @@ Example: S3 Storage Backend
 
            return {'key': key, 'bucket': self.bucket}
 
-       def download_file(
-           self,
-           hash_value: str,
-           output_path: Path,
-           progress_callback: Optional[Callable[[int, int], None]] = None
-       ) -> Path:
-           """Download file from S3."""
-           # In real implementation, you'd need to map hash to S3 key
-           # This is simplified for example purposes
-           key = self._hash_to_key(hash_value)
+        def download_file(
+            self,
+            file_id: str,
+            output_path: Path,
+            progress_callback: Optional[Callable[[int, int], None]] = None
+        ) -> Path:
+            """Download file from S3."""
+            # file_id is the hash from FileEntry.hash
+            # In this implementation, we use ETag as the hash
+            # You need to map hash to S3 key for your use case
+            key = self._hash_to_key(file_id)
 
-           # Get file size
-           response = self.s3_client.head_object(Bucket=self.bucket, Key=key)
-           file_size = response['ContentLength']
+            # Get file size
+            response = self.s3_client.head_object(Bucket=self.bucket, Key=key)
+            file_size = response['ContentLength']
 
-           # Progress callback wrapper
-           def s3_progress(bytes_transferred):
-               if progress_callback:
-                   progress_callback(bytes_transferred, file_size)
+            # Progress callback wrapper
+            def s3_progress(bytes_transferred):
+                if progress_callback:
+                    progress_callback(bytes_transferred, file_size)
 
-           # Download file
-           self.s3_client.download_file(
-               self.bucket,
-               key,
-               str(output_path),
-               Callback=s3_progress
-           )
+            # Download file
+            self.s3_client.download_file(
+                self.bucket,
+                key,
+                str(output_path),
+                Callback=s3_progress
+            )
 
-           return output_path
+            return output_path
 
        def delete_file_entries(
            self,

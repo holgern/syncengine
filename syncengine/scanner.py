@@ -235,6 +235,33 @@ class DestinationFile:
         """Destination file entry hash (MD5)."""
         return self.entry.hash
 
+    def get_download_identifier(self) -> str:
+        """Get the identifier to use for download operations.
+
+        By default, returns the hash field which is appropriate for most
+        cloud storage services (e.g., Drime, Google Drive, Dropbox, OneDrive).
+        The hash typically contains the content-based identifier or opaque file ID
+        that the storage API uses for download operations.
+
+        Services can subclass DestinationFile to override this method if they
+        need different behavior (e.g., combining multiple fields, using a
+        different identifier format).
+
+        Returns:
+            File identifier for download operations (from entry.hash by default)
+
+        Examples:
+            >>> # Default behavior - returns hash
+            >>> dest_file.get_download_identifier()
+            'MTEyNDUwfHBhZA'  # Base64-encoded identifier for Drime
+
+            >>> # Custom service could override to use different field
+            >>> class CustomDestinationFile(DestinationFile):
+            ...     def get_download_identifier(self) -> str:
+            ...         return f"{self.entry.metadata['bucket']}/{self.entry.hash}"
+        """
+        return self.entry.hash
+
 
 class DirectoryScanner:
     """Scans directories and builds file lists.

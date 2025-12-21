@@ -107,9 +107,17 @@ class StorageClientProtocol(Protocol):
         """Download a file from destination storage.
 
         Args:
-            file_id: File entry ID (from FileEntry.id) to download
+            file_id: File identifier for download operations. This should be
+                the content-based identifier obtained from
+                DestinationFile.get_download_identifier(), which typically
+                returns FileEntry.hash. The hash field contains the identifier
+                used by the storage API's download endpoint (e.g., content
+                hash, opaque ID string, or other unique identifier). This is
+                NOT the integer database ID from FileEntry.id - that is an
+                internal identifier not meant for external API operations.
             output_path: Source path where file should be saved
-            progress_callback: Callback for download progress (bytes_downloaded, total)
+            progress_callback: Callback for download progress
+                (bytes_downloaded, total)
 
         Returns:
             Path where file was saved
